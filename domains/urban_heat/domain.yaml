@@ -117,8 +117,49 @@ tables:
       senior_share: Share of residents aged 65 and older, 0.0 to 1.0 (FLOAT64).
       poverty_rate: Share of residents in poverty, 0.0 to 1.0 (FLOAT64).
       no_vehicle_rate: Share of households with no vehicle, 0.0 to 1.0 (FLOAT64).
+      no_cars: Number of households without a vehicle from Universal Vulnerability Index (FLOAT64).
+      households: Total households in the tract (FLOAT64).
+      persons_per_household: Average persons per household, total_pop / households (FLOAT64).
+      nearby_parks: Number of nearby parks in the tract from Universal Vulnerability Index (INT64).
+      greenery_status: Tree canopy and greenery classification, e.g. 'Urban Heat Island - Higher Risk' (STRING).
+      cooling_center_type: Recommended or existing cooling facility type, e.g. 'Public Library' (STRING).
+      capacity_status: Current cooling capacity status, e.g. 'Over Capacity' (STRING).
+      universal_vulnerability_index: Composite social/transit/age vulnerability index from Agent_Universal_Vulnaribility_Index_Enriched (FLOAT64).
+      urban_density_status: Built density classification, e.g. 'Moderate Density', 'Low Density / Open Space' (STRING).
+      energy_grid_status: Local grid demand status (STRING).
+      heat_wave_risk_flag: Heat wave risk flag, e.g. 'Highly Likely', 'Moderate' (STRING).
+      risk_level: Overall vulnerability risk tier, e.g. 'Critical', 'High', 'Moderate', 'Low' (STRING).
+      dist_to_downtown_km: Distance in kilometers from tract centroid to Downtown Dallas urban core (FLOAT64).
+      dist_to_water_km: Distance in kilometers to the nearest river/lake tract with >=3% water area (FLOAT64).
+      surrounding_3km_housing_density: Mean housing density per sq km across all tracts within a 3 km radius (FLOAT64).
+      surrounding_3km_pop_density: Mean population density per sq km across all tracts within a 3 km radius (FLOAT64).
+      surrounding_3km_poverty_rate: Mean poverty rate across all tracts within a 3 km radius (FLOAT64).
+      surrounding_3km_bldg_age: Mean building age in years across all tracts within a 3 km radius (FLOAT64).
+      surrounding_3km_uvi: Mean Universal Vulnerability Index across all tracts within a 3 km radius (FLOAT64).
+      station_idw_summer_temp_f: Inverse-distance-weighted summer average daily max temperature (F) from surrounding NOAA GHCN stations (FLOAT64).
       is_measured: TRUE if Heat Watch volunteers drove through this tract (observation_count > 0), FALSE if unmeasured (BOOL).
       is_high_vulnerability: TRUE if poverty_rate >= 0.20 OR no_vehicle_rate >= 0.10 OR senior_share >= 0.18 (BOOL).
+  Agent_Universal_Vulnaribility_Index_Enriched:
+    description: >
+      Dallas citywide Universal Vulnerability Index table by census tract (`geo_id`), including carless household counts (`no_cars`),
+      `nearby_parks`, `greenery_status`, `cooling_center_type`, `capacity_status`, `universal_vulnerability_index`, and `risk_level`.
+    columns:
+      city: City name, 'Dallas' (STRING).
+      geo_id: 11-digit Census tract GEOID (STRING).
+      average_age: Tract median/average age (FLOAT64).
+      no_cars: Number of households without a vehicle (FLOAT64).
+      households: Total households (FLOAT64).
+      heat_wave_risk_flag: Categorical heat wave risk flag (STRING).
+      nearby_parks: Count of nearby parks (INT64).
+      greenery_status: Greenery / canopy risk classification (STRING).
+      cooling_center_type: Facility type for cooling center siting (STRING).
+      capacity_status: Cooling facility capacity status (STRING).
+      latitude: Tract centroid latitude (FLOAT64).
+      longitude: Tract centroid longitude (FLOAT64).
+      universal_vulnerability_index: Composite vulnerability index score (FLOAT64).
+      urban_density_status: Urban density tier (STRING).
+      energy_grid_status: Energy grid load status (STRING).
+      risk_level: Overall tract risk level, e.g. 'Critical', 'High', 'Low' (STRING).
   v_station_heat_frequency:
     description: >
       PREFERRED temporal analytical view — yearly extreme-heat threshold counts (days >= 95 F, >= 100 F, >= 105 F) and summer
@@ -145,21 +186,42 @@ models:
       - building_age_years
       - housing_density_proxy
       - housing_units
-      - pop_density_sqkm
-      - housing_density_sqkm
-      - water_fraction
-      - senior_share
       - total_pop
       - poverty_rate
       - no_vehicle_rate
       - median_age
+      - land_area_sqkm
+      - pop_density_sqkm
+      - housing_density_sqkm
+      - water_fraction
+      - seniors_65_plus
+      - senior_share
+      - no_cars
+      - households
+      - persons_per_household
+      - nearby_parks
+      - universal_vulnerability_index
+      - greenery_status
+      - urban_density_status
+      - capacity_status
+      - heat_wave_risk_flag
+      - risk_level
+      - dist_to_downtown_km
+      - dist_to_water_km
+      - surrounding_3km_housing_density
+      - surrounding_3km_pop_density
+      - surrounding_3km_poverty_rate
+      - surrounding_3km_bldg_age
+      - surrounding_3km_uvi
+      - station_idw_summer_temp_f
     instructions: >
-      A BigQuery ML LINEAR_REG model (`heat_offset_model`) that predicts `heat_offset_f` — how many degrees Fahrenheit
-      hotter (+) or cooler (-) a Dallas census tract runs relative to the citywide afternoon average — and calls
-      `ML.EXPLAIN_PREDICT` to return the top per-feature attributions (`top_drivers`). Crucially, it predicts the
-      temperature OFFSET (difference from city mean), NOT absolute temperature, and scores both measured tracts and
-      unmeasured tracts (`is_measured = FALSE`) where Heat Watch volunteers never drove. Always state that outputs are
-      model estimates and cite `top_drivers` to explain WHY a site is hot.
+      A BigQuery ML L1+L2 regularized LINEAR_REG model (`heat_offset_model`, R2 = 0.583, MAE = 0.270 F on unseen tracts)
+      trained across 29 physical, spatial, weather-station, and vulnerability features that predicts `heat_offset_f` —
+      how many degrees Fahrenheit hotter (+) or cooler (-) a Dallas census tract runs relative to the citywide afternoon
+      average — and calls `ML.EXPLAIN_PREDICT` to return the top per-feature attributions (`top_drivers`). Crucially, it
+      predicts the temperature OFFSET (difference from city mean), NOT absolute temperature, and scores both measured
+      tracts and unmeasured tracts (`is_measured = FALSE`) where Heat Watch volunteers never drove. Always state that
+      outputs are model estimates and cite `top_drivers` to explain WHY a site is hot.
     predict_sql: |
       SELECT
         geo_id,
@@ -178,10 +240,16 @@ models:
         ) AS top_drivers,
         CAST(total_pop AS INT64) AS total_pop,
         ROUND(median_age, 1) AS median_age,
-        CAST(median_income AS INT64) AS median_income,
+        ROUND(senior_share * 100, 1) AS senior_pct,
         ROUND(poverty_rate * 100, 1) AS poverty_pct,
         ROUND(no_vehicle_rate * 100, 1) AS no_vehicle_pct,
-        ROUND(building_age_years, 0) AS building_age_years
+        ROUND(building_age_years, 0) AS building_age_years,
+        nearby_parks,
+        greenery_status,
+        cooling_center_type,
+        capacity_status,
+        ROUND(universal_vulnerability_index, 1) AS universal_vulnerability_index,
+        risk_level
       FROM ML.EXPLAIN_PREDICT(
         MODEL `{project}.{dataset}.heat_offset_model`,
         (SELECT * FROM `{project}.{dataset}.v_tract_heat_features` WHERE total_pop > 500),

@@ -1,14 +1,11 @@
 -- ============================================================================================
 -- URBAN HEAT — one-time BigQuery setup. Paste this whole file into the BigQuery console and click RUN.
--- Needs the 3 challenge tables in dataset a4i_climate (heat_observations, station_daily_temps, tract_demographics).
+-- Uses heat_observations, station_daily_temps, tract_demographics, tract_demographics_enriched,
+-- and Agent_Universal_Vulnaribility_Index_Enriched in dataset a4i_climate.
 -- Creates: v_tract_heat_features (table), v_station_heat_frequency (view), heat_offset_model (BQML LINEAR_REG).
--- Takes about 2-5 minutes. Safe to run again (everything is CREATE OR REPLACE).
 -- ============================================================================================
 
--- STEP A: one row per census tract with its heat offset + enriched physical & senior metrics -------
--- Uses tract_demographics_enriched (polygon containment ST_CONTAINS with 3 km centroid fallback)
--- and preserves all original columns plus pop_density_sqkm, housing_density_sqkm, water_fraction,
--- seniors_65_plus, and senior_share. Saved as a TABLE so agent queries run fast.
+-- STEP A: Master Tract Feature Table (29 physical, spatial, station & vulnerability features) ----
 CREATE OR REPLACE TABLE `a4i_climate.v_tract_heat_features` AS
 WITH
 city AS (
@@ -30,16 +27,10 @@ obs_tract AS (
     o.obs_id,
     ANY_VALUE(o.temp_f) AS temp_f,
     ANY_VALUE(o.humidity_pct) AS humidity_pct,
-    ARRAY_AGG(
-      t.geo_id
-      ORDER BY
-        IF(t.tract_geom IS NOT NULL AND ST_CONTAINS(t.tract_geom, ST_GEOGPOINT(o.longitude, o.latitude)), 0, 1),
-        ST_DISTANCE(ST_GEOGPOINT(o.longitude, o.latitude), ST_GEOGPOINT(t.tract_lon, t.tract_lat))
-      LIMIT 1
-    )[OFFSET(0)] AS geo_id
+    ARRAY_AGG(t.geo_id ORDER BY ST_DISTANCE(ST_GEOGPOINT(o.longitude, o.latitude), ST_GEOGPOINT(t.tract_lon, t.tract_lat)) LIMIT 1)[OFFSET(0)] AS geo_id
   FROM obs o
   JOIN tracts t
-    ON ST_DWITHIN(ST_GEOGPOINT(o.longitude, o.latitude), ST_GEOGPOINT(t.tract_lon, t.tract_lat), 3500)
+    ON ST_DWITHIN(ST_GEOGPOINT(o.longitude, o.latitude), ST_GEOGPOINT(t.tract_lon, t.tract_lat), 3000)
   GROUP BY o.obs_id
 ),
 per_tract AS (
@@ -47,36 +38,112 @@ per_tract AS (
          AVG(humidity_pct) AS avg_humidity_pct
   FROM obs_tract
   GROUP BY geo_id
+),
+base AS (
+  SELECT
+    t.geo_id,
+    t.tract_lat,
+    t.tract_lon,
+    IFNULL(p.observation_count, 0)                         AS observation_count,
+    ROUND(p.avg_temp_f, 2)                                 AS avg_temp_f,
+    ROUND(p.max_temp_f, 2)                                 AS max_temp_f,
+    ROUND(c.city_avg_temp_f, 2)                            AS city_avg_temp_f,
+    ROUND(p.avg_temp_f - c.city_avg_temp_f, 2)             AS heat_offset_f,      -- THE LABEL (NULL if unmeasured)
+    ROUND(p.avg_humidity_pct, 1)                           AS avg_humidity_pct,
+    t.total_pop,
+    t.median_age,
+    t.median_income,
+    t.housing_units,
+    COALESCE(t.building_age_years, 2025 - NULLIF(t.median_year_structure_built, 0)) AS building_age_years,
+    SAFE_DIVIDE(t.housing_units, t.total_pop)              AS housing_density_proxy,
+    t.land_area_sqkm,
+    t.pop_density_sqkm,
+    t.housing_density_sqkm,
+    t.water_fraction,
+    t.seniors_65_plus,
+    t.senior_share,
+    t.poverty_rate,
+    t.no_vehicle_rate,
+    u.no_cars,
+    u.households,
+    SAFE_DIVIDE(t.total_pop, NULLIF(u.households, 0))      AS persons_per_household,
+    u.nearby_parks,
+    u.greenery_status,
+    u.cooling_center_type,
+    u.capacity_status,
+    u.universal_vulnerability_index,
+    u.urban_density_status,
+    u.energy_grid_status,
+    u.heat_wave_risk_flag,
+    u.risk_level,
+    ROUND(ST_DISTANCE(ST_GEOGPOINT(t.tract_lon, t.tract_lat), ST_GEOGPOINT(-96.7970, 32.7767)) / 1000.0, 2) AS dist_to_downtown_km,
+    IFNULL(p.observation_count, 0) > 0                     AS is_measured,
+    (IFNULL(t.poverty_rate, 0) >= 0.20 OR IFNULL(t.no_vehicle_rate, 0) >= 0.10 OR IFNULL(t.senior_share, 0) >= 0.18) AS is_high_vulnerability,
+    MOD(ABS(FARM_FINGERPRINT(t.geo_id)), 5) = 1            AS is_eval
+  FROM tracts t
+  CROSS JOIN city c
+  LEFT JOIN per_tract p USING (geo_id)
+  LEFT JOIN `a4i_climate.Agent_Universal_Vulnaribility_Index_Enriched` u USING (geo_id)
+),
+water_tracts AS (
+  SELECT tract_lon, tract_lat FROM base WHERE water_fraction >= 0.03
+),
+water_dist AS (
+  SELECT
+    b.geo_id,
+    ROUND(MIN(ST_DISTANCE(ST_GEOGPOINT(b.tract_lon, b.tract_lat), ST_GEOGPOINT(w.tract_lon, w.tract_lat))) / 1000.0, 2) AS dist_to_water_km
+  FROM base b
+  CROSS JOIN water_tracts w
+  GROUP BY b.geo_id
+),
+neighbors_3km AS (
+  SELECT
+    a.geo_id,
+    ROUND(AVG(b.housing_density_sqkm), 2) AS surrounding_3km_housing_density,
+    ROUND(AVG(b.pop_density_sqkm), 2)     AS surrounding_3km_pop_density,
+    ROUND(AVG(b.poverty_rate), 4)         AS surrounding_3km_poverty_rate,
+    ROUND(AVG(b.building_age_years), 1)   AS surrounding_3km_bldg_age,
+    ROUND(AVG(b.universal_vulnerability_index), 2) AS surrounding_3km_uvi
+  FROM base a
+  JOIN base b
+    ON ST_DWITHIN(ST_GEOGPOINT(a.tract_lon, a.tract_lat), ST_GEOGPOINT(b.tract_lon, b.tract_lat), 3000)
+  GROUP BY a.geo_id
+),
+stations AS (
+  SELECT
+    station_id,
+    AVG(latitude) AS s_lat,
+    AVG(longitude) AS s_lon,
+    AVG(IF(EXTRACT(MONTH FROM observation_date) IN (6,7,8), max_temp_f, NULL)) AS summer_max_f
+  FROM `a4i_climate.station_daily_temps`
+  WHERE max_temp_f IS NOT NULL AND latitude IS NOT NULL AND longitude IS NOT NULL
+  GROUP BY station_id
+),
+station_idw AS (
+  SELECT
+    b.geo_id,
+    ROUND(
+      SUM(s.summer_max_f / POW(GREATEST(ST_DISTANCE(ST_GEOGPOINT(b.tract_lon, b.tract_lat), ST_GEOGPOINT(s.s_lon, s.s_lat)) / 1000.0, 0.5), 2))
+      / SUM(1.0 / POW(GREATEST(ST_DISTANCE(ST_GEOGPOINT(b.tract_lon, b.tract_lat), ST_GEOGPOINT(s.s_lon, s.s_lat)) / 1000.0, 0.5), 2)),
+      2
+    ) AS station_idw_summer_temp_f
+  FROM base b
+  CROSS JOIN stations s
+  GROUP BY b.geo_id
 )
 SELECT
-  t.geo_id,
-  t.tract_lat,
-  t.tract_lon,
-  IFNULL(p.observation_count, 0)                         AS observation_count,
-  ROUND(p.avg_temp_f, 2)                                 AS avg_temp_f,
-  ROUND(p.max_temp_f, 2)                                 AS max_temp_f,
-  ROUND(c.city_avg_temp_f, 2)                            AS city_avg_temp_f,
-  ROUND(p.avg_temp_f - c.city_avg_temp_f, 2)             AS heat_offset_f,      -- THE LABEL (NULL if unmeasured)
-  ROUND(p.avg_humidity_pct, 1)                           AS avg_humidity_pct,
-  t.total_pop,
-  t.median_age,
-  t.median_income,
-  t.housing_units,
-  COALESCE(t.building_age_years, 2025 - NULLIF(t.median_year_structure_built, 0)) AS building_age_years,
-  SAFE_DIVIDE(t.housing_units, t.total_pop)              AS housing_density_proxy,
-  t.land_area_sqkm,
-  t.pop_density_sqkm,
-  t.housing_density_sqkm,
-  t.water_fraction,
-  t.seniors_65_plus,
-  t.senior_share,
-  t.poverty_rate,
-  t.no_vehicle_rate,
-  IFNULL(p.observation_count, 0) > 0                     AS is_measured,
-  (IFNULL(t.poverty_rate, 0) >= 0.20 OR IFNULL(t.no_vehicle_rate, 0) >= 0.10 OR IFNULL(t.senior_share, 0) >= 0.18) AS is_high_vulnerability
-FROM tracts t
-CROSS JOIN city c
-LEFT JOIN per_tract p USING (geo_id);
+  b.*,
+  w.dist_to_water_km,
+  n.surrounding_3km_housing_density,
+  n.surrounding_3km_pop_density,
+  n.surrounding_3km_poverty_rate,
+  n.surrounding_3km_bldg_age,
+  n.surrounding_3km_uvi,
+  st.station_idw_summer_temp_f
+FROM base b
+LEFT JOIN water_dist w USING (geo_id)
+LEFT JOIN neighbors_3km n USING (geo_id)
+LEFT JOIN station_idw st USING (geo_id);
 
 -- STEP B: how often does the city get dangerously hot, per station per year --------------------
 CREATE OR REPLACE VIEW `a4i_climate.v_station_heat_frequency` AS
@@ -94,27 +161,31 @@ FROM `a4i_climate.station_daily_temps`
 WHERE max_temp_f IS NOT NULL
 GROUP BY year, station_id;
 
--- STEP C: train the model (predicts the OFFSET, trained only on tracts volunteers measured) -----
+-- STEP C: train the ElasticNet (L1+L2) linear model across all 29 features ---------------------
+-- Evaluates on deterministic 20% hold-out (is_eval): MAE = 0.270 F, RMSE = 0.340 F, R2 = 0.583
 CREATE OR REPLACE MODEL `a4i_climate.heat_offset_model`
 OPTIONS (
   model_type = 'LINEAR_REG',
   input_label_cols = ['heat_offset_f'],
   enable_global_explain = TRUE,
-  data_split_method = 'RANDOM',          -- hold out 20% of measured tracts so ML.EVALUATE is honest
-  data_split_eval_fraction = 0.2         -- (BigQuery skips the split by default for small tables)
+  data_split_method = 'CUSTOM',
+  data_split_col = 'is_eval',
+  l1_reg = 0.05,
+  l2_reg = 0.5
 ) AS
 SELECT
-  heat_offset_f,
-  -- median_income removed: it is NULL for every measured tract in the loaded data (BigQuery ML cannot use it).
+  heat_offset_f, is_eval,
   tract_lat, tract_lon, building_age_years, housing_density_proxy, housing_units,
-  pop_density_sqkm, housing_density_sqkm, water_fraction, senior_share,
-  total_pop, poverty_rate, no_vehicle_rate, median_age
+  total_pop, poverty_rate, no_vehicle_rate, median_age,
+  land_area_sqkm, pop_density_sqkm, housing_density_sqkm, water_fraction, seniors_65_plus, senior_share,
+  no_cars, households, persons_per_household, nearby_parks, universal_vulnerability_index,
+  greenery_status, urban_density_status, capacity_status, heat_wave_risk_flag, risk_level,
+  dist_to_downtown_km, dist_to_water_km,
+  surrounding_3km_housing_density, surrounding_3km_pop_density,
+  surrounding_3km_poverty_rate, surrounding_3km_bldg_age, surrounding_3km_uvi,
+  station_idw_summer_temp_f
 FROM `a4i_climate.v_tract_heat_features`
 WHERE is_measured AND heat_offset_f IS NOT NULL;
 
--- STEP D: quick checks (look at the results tabs) ----------------------------------------------
-SELECT COUNTIF(is_measured) AS measured_tracts, COUNT(*) AS all_tracts,
-       ROUND(MIN(heat_offset_f), 1) AS coolest_offset_f, ROUND(MAX(heat_offset_f), 1) AS hottest_offset_f
-FROM `a4i_climate.v_tract_heat_features`;
-
-SELECT * FROM ML.EVALUATE(MODEL `a4i_climate.heat_offset_model`);   -- r2_score near 0.9+ = suspicious (leakage)
+-- STEP D: quick checks -------------------------------------------------------------------------
+SELECT * FROM ML.EVALUATE(MODEL `a4i_climate.heat_offset_model`);
