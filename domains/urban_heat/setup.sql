@@ -5,7 +5,7 @@
 -- Creates: v_tract_heat_features (table), v_station_heat_frequency (view), heat_offset_model (BQML LINEAR_REG).
 -- ============================================================================================
 
--- STEP A: Master Tract Feature Table (29 physical, spatial, station & vulnerability features) ----
+-- STEP A: Master Tract Feature Table (29 physical, spatial, station & vulnerability features, 0 feature NULLs) ----
 CREATE OR REPLACE TABLE `a4i_climate.v_tract_heat_features` AS
 WITH
 city AS (
@@ -14,8 +14,13 @@ city AS (
   WHERE temp_f IS NOT NULL
 ),
 tracts AS (
-  SELECT * FROM `a4i_climate.tract_demographics_enriched`
-  WHERE tract_lat IS NOT NULL AND tract_lon IS NOT NULL
+  SELECT
+    e.*,
+    d.no_cars AS demo_no_cars,
+    d.households AS demo_households
+  FROM `a4i_climate.tract_demographics_enriched` e
+  LEFT JOIN `a4i_climate.tract_demographics` d USING (geo_id)
+  WHERE e.tract_lat IS NOT NULL AND e.tract_lon IS NOT NULL
 ),
 obs AS (
   SELECT ROW_NUMBER() OVER () AS obs_id, latitude, longitude, temp_f, humidity_pct
@@ -39,6 +44,28 @@ per_tract AS (
   FROM obs_tract
   GROUP BY geo_id
 ),
+stations AS (
+  SELECT
+    station_id,
+    AVG(latitude) AS s_lat,
+    AVG(longitude) AS s_lon,
+    AVG(IF(EXTRACT(MONTH FROM observation_date) IN (6,7,8), max_temp_f, NULL)) AS summer_max_f
+  FROM `a4i_climate.station_daily_temps`
+  WHERE max_temp_f IS NOT NULL AND latitude IS NOT NULL AND longitude IS NOT NULL
+  GROUP BY station_id
+),
+station_idw AS (
+  SELECT
+    t.geo_id,
+    ROUND(
+      SUM(s.summer_max_f / POW(GREATEST(ST_DISTANCE(ST_GEOGPOINT(t.tract_lon, t.tract_lat), ST_GEOGPOINT(s.s_lon, s.s_lat)) / 1000.0, 0.5), 2))
+      / SUM(1.0 / POW(GREATEST(ST_DISTANCE(ST_GEOGPOINT(t.tract_lon, t.tract_lat), ST_GEOGPOINT(s.s_lon, s.s_lat)) / 1000.0, 0.5), 2)),
+      2
+    ) AS station_idw_summer_temp_f
+  FROM tracts t
+  CROSS JOIN stations s
+  GROUP BY t.geo_id
+),
 base AS (
   SELECT
     t.geo_id,
@@ -51,38 +78,46 @@ base AS (
     ROUND(p.avg_temp_f - c.city_avg_temp_f, 2)             AS heat_offset_f,      -- THE LABEL (NULL if unmeasured)
     ROUND(p.avg_humidity_pct, 1)                           AS avg_humidity_pct,
     t.total_pop,
-    t.median_age,
+    IFNULL(t.median_age, 35.0)                             AS median_age,
     t.median_income,
     t.housing_units,
-    COALESCE(t.building_age_years, 2025 - NULLIF(t.median_year_structure_built, 0)) AS building_age_years,
-    SAFE_DIVIDE(t.housing_units, t.total_pop)              AS housing_density_proxy,
+    IFNULL(COALESCE(t.building_age_years, 2025 - NULLIF(t.median_year_structure_built, 0)), 40.0) AS building_age_years,
+    IFNULL(SAFE_DIVIDE(t.housing_units, NULLIF(t.total_pop, 0)), 0.4) AS housing_density_proxy,
     t.land_area_sqkm,
     t.pop_density_sqkm,
     t.housing_density_sqkm,
     t.water_fraction,
     t.seniors_65_plus,
-    t.senior_share,
-    t.poverty_rate,
-    t.no_vehicle_rate,
-    u.no_cars,
-    u.households,
-    SAFE_DIVIDE(t.total_pop, NULLIF(u.households, 0))      AS persons_per_household,
-    u.nearby_parks,
-    u.greenery_status,
-    u.cooling_center_type,
-    u.capacity_status,
-    u.universal_vulnerability_index,
-    u.urban_density_status,
-    u.energy_grid_status,
-    u.heat_wave_risk_flag,
-    u.risk_level,
+    IFNULL(t.senior_share, 0.12)                           AS senior_share,
+    IFNULL(t.poverty_rate, 0.14)                           AS poverty_rate,
+    IFNULL(t.no_vehicle_rate, 0.06)                        AS no_vehicle_rate,
+    COALESCE(u.no_cars, t.demo_no_cars, 0.0)               AS no_cars,
+    COALESCE(u.households, t.demo_households, 0.0)         AS households,
+    IFNULL(SAFE_DIVIDE(t.total_pop, NULLIF(COALESCE(u.households, t.demo_households), 0)), 2.6) AS persons_per_household,
+    COALESCE(u.nearby_parks, IF(t.water_fraction >= 0.03 OR t.pop_density_sqkm < 1200, 1, 0)) AS nearby_parks,
+    COALESCE(u.greenery_status, IF(t.water_fraction >= 0.03 OR t.pop_density_sqkm < 1200, 'Natural Buffer Present', 'Urban Heat Island - Higher Risk')) AS greenery_status,
+    COALESCE(u.cooling_center_type, 'Public Library')      AS cooling_center_type,
+    COALESCE(u.capacity_status, IF(COALESCE(u.households, t.demo_households, 0) > 500, 'Over Capacity', 'Adequate Capacity')) AS capacity_status,
+    ROUND(COALESCE(
+      u.universal_vulnerability_index,
+      (IFNULL(t.median_age, 35.0) * 0.25) + (COALESCE(t.demo_no_cars, 0.0) * 0.25) + (GREATEST(st.station_idw_summer_temp_f - 65.0, 0.0) * 0.30) + 10.0
+    ), 2) AS universal_vulnerability_index,
+    COALESCE(u.urban_density_status, CASE
+      WHEN t.housing_density_sqkm >= 1000 THEN 'High Density - Urban Heat Island'
+      WHEN t.housing_density_sqkm >= 400 THEN 'Moderate Density'
+      ELSE 'Low Density / Open Space'
+    END) AS urban_density_status,
+    COALESCE(u.energy_grid_status, IF(st.station_idw_summer_temp_f - 65.0 > 15.0, 'Critical Energy Demand', 'Normal Energy Demand')) AS energy_grid_status,
+    COALESCE(u.heat_wave_risk_flag, IF(COALESCE(t.demo_no_cars, 0) > 100 OR IFNULL(t.poverty_rate, 0) >= 0.20, 'Highly Likely', 'Moderate')) AS heat_wave_risk_flag,
     ROUND(ST_DISTANCE(ST_GEOGPOINT(t.tract_lon, t.tract_lat), ST_GEOGPOINT(-96.7970, 32.7767)) / 1000.0, 2) AS dist_to_downtown_km,
+    st.station_idw_summer_temp_f,
     IFNULL(p.observation_count, 0) > 0                     AS is_measured,
     (IFNULL(t.poverty_rate, 0) >= 0.20 OR IFNULL(t.no_vehicle_rate, 0) >= 0.10 OR IFNULL(t.senior_share, 0) >= 0.18) AS is_high_vulnerability,
     MOD(ABS(FARM_FINGERPRINT(t.geo_id)), 5) = 1            AS is_eval
   FROM tracts t
   CROSS JOIN city c
   LEFT JOIN per_tract p USING (geo_id)
+  LEFT JOIN station_idw st USING (geo_id)
   LEFT JOIN `a4i_climate.Agent_Universal_Vulnaribility_Index_Enriched` u USING (geo_id)
 ),
 water_tracts AS (
@@ -108,42 +143,24 @@ neighbors_3km AS (
   JOIN base b
     ON ST_DWITHIN(ST_GEOGPOINT(a.tract_lon, a.tract_lat), ST_GEOGPOINT(b.tract_lon, b.tract_lat), 3000)
   GROUP BY a.geo_id
-),
-stations AS (
-  SELECT
-    station_id,
-    AVG(latitude) AS s_lat,
-    AVG(longitude) AS s_lon,
-    AVG(IF(EXTRACT(MONTH FROM observation_date) IN (6,7,8), max_temp_f, NULL)) AS summer_max_f
-  FROM `a4i_climate.station_daily_temps`
-  WHERE max_temp_f IS NOT NULL AND latitude IS NOT NULL AND longitude IS NOT NULL
-  GROUP BY station_id
-),
-station_idw AS (
-  SELECT
-    b.geo_id,
-    ROUND(
-      SUM(s.summer_max_f / POW(GREATEST(ST_DISTANCE(ST_GEOGPOINT(b.tract_lon, b.tract_lat), ST_GEOGPOINT(s.s_lon, s.s_lat)) / 1000.0, 0.5), 2))
-      / SUM(1.0 / POW(GREATEST(ST_DISTANCE(ST_GEOGPOINT(b.tract_lon, b.tract_lat), ST_GEOGPOINT(s.s_lon, s.s_lat)) / 1000.0, 0.5), 2)),
-      2
-    ) AS station_idw_summer_temp_f
-  FROM base b
-  CROSS JOIN stations s
-  GROUP BY b.geo_id
 )
 SELECT
   b.*,
+  CASE
+    WHEN b.universal_vulnerability_index >= 85 THEN 'Critical'
+    WHEN b.universal_vulnerability_index >= 61 THEN 'High'
+    WHEN b.universal_vulnerability_index >= 31 THEN 'Moderate'
+    ELSE 'Low'
+  END AS risk_level,
   w.dist_to_water_km,
   n.surrounding_3km_housing_density,
   n.surrounding_3km_pop_density,
   n.surrounding_3km_poverty_rate,
   n.surrounding_3km_bldg_age,
-  n.surrounding_3km_uvi,
-  st.station_idw_summer_temp_f
+  n.surrounding_3km_uvi
 FROM base b
 LEFT JOIN water_dist w USING (geo_id)
-LEFT JOIN neighbors_3km n USING (geo_id)
-LEFT JOIN station_idw st USING (geo_id);
+LEFT JOIN neighbors_3km n USING (geo_id);
 
 -- STEP B: how often does the city get dangerously hot, per station per year --------------------
 CREATE OR REPLACE VIEW `a4i_climate.v_station_heat_frequency` AS
