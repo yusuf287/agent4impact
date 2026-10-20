@@ -1,13 +1,13 @@
 ---
 name: add-data
-description: Load a dataset (CSV/JSON/Parquet/Excel/GeoJSON file, URL, or Toronto Open Data CKAN package) into BigQuery, auto-document columns, and build agent-friendly views. Use whenever new data is needed.
+description: Load a dataset (CSV/JSON/Parquet/Excel/GeoJSON file or URL) into BigQuery, auto-document columns, and build agent-friendly views. Use whenever new data is needed.
 ---
 
 # Add data to BigQuery
 
 1. Run `python -m kit add-data <source> [--table name] [--limit 5000]`.
-   - `ckan:<package-name>` loads from Toronto Open Data (use `--resource <index|name>` if there are several files).
-   - Find datasets: ask the agent to use `search_open_data`, or browse the CKAN portal.
+   - The core challenge tables come from the challenge notebook / `scripts/load.sh`; use this only for extra data.
+   - Check the license first: public domain / CC0 / US Gov only. No OpenStreetMap-derived (ODbL), NC, ND or share-alike data.
 2. Read the printed null warnings and the generated column descriptions in `domains/<x>/generated.yaml`.
    Fix any wrong description by writing the correct one in `domain.yaml` (hand-written wins).
 3. Build ONE clean view per analytical question: `python -m kit sql --view v_<topic> --query "SELECT ..."`.

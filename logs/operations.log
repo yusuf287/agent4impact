@@ -1,0 +1,75 @@
+2026-10-20T14:50:52Z [new-domain] === start 20261020T145052Z_new-domain ===
+2026-10-20T14:50:52Z [new-domain] UNDO registered: rm -rf 'C:\Users\yusuf.firoz\Personal\Agent4Impact\impact-agent\domains\urban_heat'
+2026-10-20T14:50:52Z [use] === start 20261020T145052Z_use ===
+2026-10-20T14:50:52Z [use] Active domain -> urban_heat (restart adk web / terminals so env reloads)
+2026-10-20T14:50:52Z [new-domain] Created domains/urban_heat. Edit domain.yaml (persona, mission, routing), then `kit add-data ...`
+2026-10-20T15:02:29Z [doctor] === start 20261020T150229Z_doctor ===
+2026-10-20T15:02:29Z [doctor] OK   Python >= 3.10 — 3.11.9
+2026-10-20T15:02:29Z [doctor] FAIL import google.adk: No module named 'google.adk'
+       fix: pip install google-adk
+2026-10-20T15:02:29Z [doctor] FAIL import google.cloud.bigquery: No module named 'google.cloud'
+       fix: pip install google-cloud-bigquery
+2026-10-20T15:02:29Z [doctor] OK   import yaml — 6.0.3
+2026-10-20T15:02:29Z [doctor] FAIL import pandas: source code string cannot contain null bytes
+       fix: pip install pandas
+2026-10-20T15:02:29Z [doctor] FAIL import pyarrow: No module named 'pyarrow'
+       fix: pip install pyarrow
+2026-10-20T15:02:29Z [doctor] OK   import requests — 2.32.5
+2026-10-20T15:02:29Z [doctor] FAIL adk CLI on PATH: not found
+       fix: activate venv / pip install google-adk
+2026-10-20T15:02:29Z [doctor] FAIL gcloud on PATH: not found
+       fix: install Google Cloud SDK, then `gcloud auth login`
+2026-10-20T15:02:29Z [doctor] OK   GOOGLE_CLOUD_PROJECT set — qwiklabs-gcp-04-f8ba79cf4618
+2026-10-20T15:02:29Z [doctor] OK   BQ_DATASET set — a4i_climate
+2026-10-20T15:02:33Z [doctor] FAIL Application Default Credentials: Your default credentials were not found. To set up Application Default Credentials, see https://cloud.google.com/docs/authentication/external/set-up-adc for mor
+       fix: gcloud auth application-default login
+2026-10-20T15:02:33Z [doctor] FAIL BigQuery access: No module named 'google.cloud'
+       fix: check project, ADC, BigQuery API enabled
+2026-10-20T15:02:33Z [doctor] OK   domain.yaml complete — dallas_heat_planner: 5 tables, 1 models
+2026-10-20T15:02:33Z [doctor] OK   team.yaml valid — team.yaml valid
+2026-10-20T15:02:33Z [doctor] OK   no stale frozen domain — True
+2026-10-20T15:02:33Z [doctor] 8 problem(s): ['import google.adk', 'import google.cloud.bigquery', 'import pandas', 'import pyarrow', 'adk CLI on PATH', 'gcloud on PATH', 'Application Default Credentials', 'BigQuery access']
+2026-10-20T15:03:10Z [doctor] === start 20261020T150310Z_doctor ===
+2026-10-20T15:03:10Z [doctor] OK   Python >= 3.10 — 3.11.9
+2026-10-20T15:03:10Z [doctor] OK   import google.adk — 2.12.0
+2026-10-20T15:03:13Z [doctor] OK   import google.cloud.bigquery — 3.46.2
+2026-10-20T15:03:13Z [doctor] OK   import yaml — 6.0.3
+2026-10-20T15:03:13Z [doctor] OK   import pandas — 3.0.6
+2026-10-20T15:03:13Z [doctor] OK   import pyarrow — 26.0.0
+2026-10-20T15:03:13Z [doctor] OK   import requests — 2.34.2
+2026-10-20T15:03:13Z [doctor] FAIL adk CLI on PATH: not found
+       fix: activate venv / pip install google-adk
+2026-10-20T15:03:13Z [doctor] FAIL gcloud on PATH: not found
+       fix: install Google Cloud SDK, then `gcloud auth login`
+2026-10-20T15:03:13Z [doctor] OK   GOOGLE_CLOUD_PROJECT set — qwiklabs-gcp-04-f8ba79cf4618
+2026-10-20T15:03:13Z [doctor] OK   BQ_DATASET set — a4i_climate
+2026-10-20T15:03:16Z [doctor] FAIL Application Default Credentials: Your default credentials were not found. To set up Application Default Credentials, see https://cloud.google.com/docs/authentication/external/set-up-adc for mor
+       fix: gcloud auth application-default login
+2026-10-20T15:03:19Z [doctor] FAIL BigQuery access: Your default credentials were not found. To set up Application Default Credentials, see https://cloud.google.com/docs/authentication/external/set-up-adc for mor
+       fix: check project, ADC, BigQuery API enabled
+2026-10-20T15:03:19Z [doctor] OK   domain.yaml complete — dallas_heat_planner: 5 tables, 1 models
+2026-10-20T15:03:19Z [doctor] OK   team.yaml valid — team.yaml valid
+2026-10-20T15:03:19Z [doctor] OK   no stale frozen domain — True
+2026-10-20T15:03:19Z [doctor] 4 problem(s): ['adk CLI on PATH', 'gcloud on PATH', 'Application Default Credentials', 'BigQuery access']
+2026-10-20T15:23:37Z [doctor] === start 20261020T152337Z_doctor ===
+2026-10-20T15:23:37Z [doctor] OK   Python >= 3.10 — 3.11.9
+2026-10-20T15:23:37Z [doctor] OK   import google.adk — 2.12.0
+2026-10-20T15:23:41Z [doctor] OK   import google.cloud.bigquery — 3.46.2
+2026-10-20T15:23:41Z [doctor] OK   import yaml — 6.0.3
+2026-10-20T15:23:41Z [doctor] OK   import pandas — 3.0.6
+2026-10-20T15:23:41Z [doctor] OK   import pyarrow — 26.0.0
+2026-10-20T15:23:41Z [doctor] OK   import requests — 2.34.2
+2026-10-20T15:23:41Z [doctor] FAIL adk CLI on PATH: not found
+       fix: activate venv / pip install google-adk
+2026-10-20T15:23:41Z [doctor] FAIL gcloud on PATH: not found
+       fix: install Google Cloud SDK, then `gcloud auth login`
+2026-10-20T15:23:41Z [doctor] OK   GOOGLE_CLOUD_PROJECT set — qwiklabs-gcp-04-f8ba79cf4618
+2026-10-20T15:23:41Z [doctor] OK   BQ_DATASET set — a4i_climate
+2026-10-20T15:23:44Z [doctor] FAIL Application Default Credentials: Your default credentials were not found. To set up Application Default Credentials, see https://cloud.google.com/docs/authentication/external/set-up-adc for mor
+       fix: gcloud auth application-default login
+2026-10-20T15:23:47Z [doctor] FAIL BigQuery access: Your default credentials were not found. To set up Application Default Credentials, see https://cloud.google.com/docs/authentication/external/set-up-adc for mor
+       fix: check project, ADC, BigQuery API enabled
+2026-10-20T15:23:47Z [doctor] OK   domain.yaml complete — dallas_heat_planner: 5 tables, 1 models
+2026-10-20T15:23:47Z [doctor] OK   team.yaml valid — team.yaml valid
+2026-10-20T15:23:47Z [doctor] OK   no stale frozen domain — True
+2026-10-20T15:23:47Z [doctor] 4 problem(s): ['adk CLI on PATH', 'gcloud on PATH', 'Application Default Credentials', 'BigQuery access']

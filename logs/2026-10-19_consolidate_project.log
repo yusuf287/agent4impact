@@ -3,3 +3,19 @@
 2. Copied a4i-agent-kit contents into project root (source copy left in the Cowork outputs folder as backup)
 3. Added logs/ and rollback/ (retain forever)
 2026-10-19 tidy: merged ideas/ -> docs/IDEAS.md; PLAYBOOK, smoke_test, agent card moved; v1 + GEMINI.md zipped to .archive/; removed duplicates
+2026-10-19 accuracy pass (ADK 2.x source review + web fact-check):
+ - kit_agent/agent.py: BigQuery imports -> google.adk.integrations.bigquery (1.x fallback); agent loads without ADC; approval tool on ROOT; instruction as InstructionProvider (no {state} templating of domain text)
+ - roles.py approver: prepares proposal (no tool); teamspec rejects 'approval' inside teams (AgentTool cannot pause)
+ - registry.py: McpToolset (2.x) with MCPToolset fallback; bigquery tool skipped when no creds
+ - prompts.py: root "Human approval" section + as_provider()
+ - kit/deploy_cmd.py: removed deprecated --staging_bucket/--requirements_file; stage requirements.txt/.env in kit_agent/ and remove after; Cloud Run uses adk --env (not gcloud --set-env-vars)
+ - scripts/deploy.sh: thin wrapper over kit deploy
+ - ui/server.py + index.html: Approve/Reject (adk_request_confirmation), charts from artifact_delta
+ - requirements.txt: google-adk[a2a]>=2.0
+ - domains/lights_out: real CKAN dataset names, views.sql (v_tower_risk)
+ - docs/IDEAS.md rewritten: verified fact sheet + sources; 26C claim corrected; new ideas (Ready Tower, Smoke Day Desk, Cool Room Check, Replay mode, Consent sign-up agent)
+ - docs fixes: AGENTS.md, PLAYBOOK.md, ANTIGRAVITY.md, add-agent-team skill
+Rollback for this pass: previous versions are in the Cowork outputs copy (a4i-agent-kit) until you delete it.
+2026-10-20 .env.example: event project + us-east1
+2026-10-20 Urban Heat cleanup: archived 26 files to .archive/pre-heat-cleanup-2026-10-20.zip, removed food_equity/lights_out/_template domains, old docs, unused scripts, embed/vision/EC/CKAN tools; urban_heat domain filled; README/AGENTS/docs/CHALLENGE.md rewritten
+2026-10-20 added domains/urban_heat/setup.sql; removed maps from investigator (end-to-end first)

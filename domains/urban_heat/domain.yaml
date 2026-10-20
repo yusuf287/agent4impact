@@ -1,0 +1,188 @@
+# URBAN HEAT — Challenge 1: Community Climate Resilience (City of Dallas)
+agent_name: dallas_heat_planner
+description: >
+  Urban heat resilience planning assistant for the City of Dallas. Use for siting permanent cooling
+  centers (budget cycle) and dispatching mobile hydration trucks or wellness checks (today's heat wave)
+  using NOAA Heat Watch street-level observations, BigQuery ML offset predictions with ML.EXPLAIN_PREDICT
+  attributions, 7-year GHCN station history, US Census ACS tract demographics, and post-hoc equity audits.
+  Do NOT use for cities outside the loaded dataset, individual medical advice, or building-interior HVAC engineering.
+persona: >
+  a senior urban climate resilience analyst supporting the City of Dallas City Manager's Office (City Planning)
+  and Office of Emergency Management.
+mission: >
+  Help Dallas planners and emergency managers decide (1) This Budget Cycle: where to fund 3-4 permanent cooling
+  centers with a council-ready Placement Recommendation backed by ML.EXPLAIN_PREDICT attributions, 7-year station
+  heat frequency, and a post-hoc Equity Audit; and (2) Today: where to dispatch mobile hydration units, wellness
+  checks, and extended library hours when forecasts cross 100 F, prioritizing residents without vehicles and seniors.
+audience: >
+  Dallas city planners preparing a City Council capital proposal and emergency managers making 20-minute dispatch decisions
+
+brand:
+  palette: ["#D93025", "#F29900", "#1A73E8", "#1E8E3E"]
+
+tables:
+  heat_observations:
+    description: >
+      NOAA/CAPA Heat Watch afternoon traverse observations for Dallas (~19,000 street-level points, CC0 1.0).
+      Single-day 1-hour afternoon campaign snapshot capturing intra-city spatial microclimate variation (not a multi-year record).
+    columns:
+      longitude: WGS84 longitude of the mobile traverse sensor reading (FLOAT64).
+      latitude: WGS84 latitude of the mobile traverse sensor reading (FLOAT64).
+      city: Campaign city name, e.g. 'Dallas' (STRING, never null).
+      temp_f: Calibrated street-level air temperature in degrees Fahrenheit (FLOAT64, 40-140 F).
+      heat_index_f: Street-level heat index in degrees Fahrenheit (FLOAT64, nullable if sensor did not report).
+      humidity_pct: Relative humidity percentage 0-100 (FLOAT64, nullable).
+      observed_at: Observation timestamp if published by the campaign, else NULL (TIMESTAMP, nullable; all rows share the same 1-hour afternoon window).
+  station_daily_temps:
+    description: >
+      Seven years (2019-2025) of QA-passed (qflag IS NULL) daily maximum temperatures (TMAX) from NOAA GHCN-Daily
+      weather stations in and around Dallas. Use this table for temporal frequency ("how often does Dallas cross 95 F or 100 F?")
+      and multi-year trends—never for block-by-block spatial variation.
+    columns:
+      station_id: NOAA GHCN station identifier, e.g. USW00013960 for Dallas Love Field (STRING).
+      station_name: Human-readable weather station name (STRING).
+      latitude: Station latitude (FLOAT64).
+      longitude: Station longitude (FLOAT64).
+      observation_date: Calendar date of the daily observation, 2019-2025 (DATE).
+      max_temp_f: Daily maximum air temperature in degrees Fahrenheit converted from tenths of degrees C (FLOAT64).
+  tract_demographics:
+    description: >
+      US Census Bureau ACS 5-year tract-level demographics joined with Census tract centroid coordinates for the Dallas bounding box.
+      Race and ethnicity columns are deliberately excluded from model inputs; use this table to assess exposure vulnerability
+      and run the mandatory post-hoc Equity Audit comparing recommended tracts against the Dallas citywide baseline.
+    columns:
+      geo_id: 11-character Census tract FIPS code, zero-padded with LPAD (STRING, join key).
+      tract_lat: Census tract internal point latitude (FLOAT64).
+      tract_lon: Census tract internal point longitude (FLOAT64).
+      total_pop: Total resident population in the census tract (FLOAT64).
+      median_age: Median age of residents in years (FLOAT64).
+      median_income: Median household income in USD (FLOAT64).
+      housing_units: Total housing units in the census tract (FLOAT64).
+      median_year_structure_built: Median construction year of residential structures in the tract (FLOAT64).
+      no_cars: Count of households in the tract with zero vehicles available (FLOAT64).
+      households: Total count of households in the tract (FLOAT64).
+      poverty_rate: Share of population below the federal poverty line, 0.0 to 1.0 (FLOAT64).
+      no_vehicle_rate: Share of households without a vehicle (no_cars / households), 0.0 to 1.0 (FLOAT64).
+  v_tract_heat_features:
+    description: >
+      PREFERRED spatial analytical and ML feature view — one row per Dallas census tract combining street-level Heat Watch
+      temperature offset (degrees_above_city_average / heat_offset_f), nearest-traverse spatial features, and ACS vulnerability
+      metrics. Use for tract rankings, demographic lookups, and BQML training/prediction.
+    columns:
+      geo_id: 11-character Census tract FIPS code (STRING, primary key).
+      tract_lat: Tract centroid latitude (FLOAT64).
+      tract_lon: Tract centroid longitude (FLOAT64).
+      observation_count: Number of street-level Heat Watch readings matched to this tract (INT64; 0 means unmeasured tract needing BQML prediction).
+      avg_temp_f: Mean afternoon traverse temperature in degrees F for measured tracts (FLOAT64, nullable if unmeasured).
+      max_temp_f: Peak afternoon traverse temperature in degrees F in this tract (FLOAT64, nullable if unmeasured).
+      city_avg_temp_f: Dallas campaign-wide mean afternoon temperature in degrees F (FLOAT64).
+      heat_offset_f: Target label — degrees Fahrenheit hotter (+) or cooler (-) than the Dallas campaign average (avg_temp_f - city_avg_temp_f).
+      avg_humidity_pct: Mean afternoon relative humidity percentage in the tract (FLOAT64).
+      total_pop: Total resident population (FLOAT64).
+      median_age: Median resident age in years (FLOAT64).
+      median_income: Median household income in USD (FLOAT64).
+      housing_units: Total housing units (FLOAT64).
+      building_age_years: Approximate median building age in years, 2025 minus median_year_structure_built (FLOAT64).
+      housing_density_proxy: Housing units divided by total population (FLOAT64).
+      poverty_rate: Share of residents in poverty, 0.0 to 1.0 (FLOAT64).
+      no_vehicle_rate: Share of households with no vehicle, 0.0 to 1.0 (FLOAT64).
+      is_measured: TRUE if Heat Watch volunteers drove through this tract (observation_count > 0), FALSE if unmeasured (BOOL).
+      is_high_vulnerability: TRUE if poverty_rate >= 0.20 OR no_vehicle_rate >= 0.10 (BOOL).
+  v_station_heat_frequency:
+    description: >
+      PREFERRED temporal analytical view — yearly extreme-heat threshold counts (days >= 95 F, >= 100 F, >= 105 F) and summer
+      averages per Dallas GHCN weather station from 2019 to 2025. Use to answer "How often does Dallas hit dangerous heat, and is it getting worse?"
+    columns:
+      year: Observation year, 2019-2025 (INT64).
+      station_id: GHCN station ID (STRING).
+      station_name: Weather station name (STRING).
+      days_observed: Valid daily TMAX observations recorded that year (INT64).
+      days_95f_plus: Number of days in the year with max_temp_f >= 95.0 F (INT64).
+      days_100f_plus: Number of days in the year with max_temp_f >= 100.0 F (INT64).
+      days_105f_plus: Number of days in the year with max_temp_f >= 105.0 F (INT64).
+      avg_summer_max_temp_f: Mean daily high temperature in degrees F during June, July, and August (FLOAT64).
+      peak_temp_f: Hottest daily maximum temperature in degrees F recorded that year (FLOAT64).
+
+models:
+  heat_offset_model:
+    type: linear
+    source: v_tract_heat_features
+    label: heat_offset_f
+    features:
+      - tract_lat
+      - tract_lon
+      - building_age_years
+      - housing_density_proxy
+      - housing_units
+      - total_pop
+      - poverty_rate
+      - no_vehicle_rate
+      - median_age
+    instructions: >
+      A BigQuery ML LINEAR_REG model (`heat_offset_model`) that predicts `heat_offset_f` — how many degrees Fahrenheit
+      hotter (+) or cooler (-) a Dallas census tract runs relative to the citywide afternoon average — and calls
+      `ML.EXPLAIN_PREDICT` to return the top per-feature attributions (`top_drivers`). Crucially, it predicts the
+      temperature OFFSET (difference from city mean), NOT absolute temperature, and scores both measured tracts and
+      unmeasured tracts (`is_measured = FALSE`) where Heat Watch volunteers never drove. Always state that outputs are
+      model estimates and cite `top_drivers` to explain WHY a site is hot.
+    predict_sql: |
+      SELECT
+        geo_id,
+        ROUND(tract_lat, 4) AS tract_lat,
+        ROUND(tract_lon, 4) AS tract_lon,
+        is_measured,
+        observation_count,
+        ROUND(predicted_heat_offset_f, 2) AS predicted_heat_offset_f,
+        ROUND(heat_offset_f, 2) AS actual_heat_offset_f,
+        ARRAY_TO_STRING(
+          ARRAY(
+            SELECT FORMAT('%s (%+.2f F)', a.feature, a.attribution)
+            FROM UNNEST(top_feature_attributions) AS a
+          ),
+          ', '
+        ) AS top_drivers,
+        CAST(total_pop AS INT64) AS total_pop,
+        ROUND(median_age, 1) AS median_age,
+        CAST(median_income AS INT64) AS median_income,
+        ROUND(poverty_rate * 100, 1) AS poverty_pct,
+        ROUND(no_vehicle_rate * 100, 1) AS no_vehicle_pct,
+        ROUND(building_age_years, 0) AS building_age_years
+      FROM ML.EXPLAIN_PREDICT(
+        MODEL `{project}.{dataset}.heat_offset_model`,
+        (SELECT * FROM `{project}.{dataset}.v_tract_heat_features` WHERE total_pop > 500),
+        STRUCT(3 AS top_k_features)
+      )
+      ORDER BY (predicted_heat_offset_f + (COALESCE(no_vehicle_rate, 0) * 10.0) + (COALESCE(poverty_rate, 0) * 5.0)) DESC
+      LIMIT {top_n}
+
+open_data: {enabled: false}
+vision: {enabled: false}
+
+routing_rules:
+  - 'Where to site cooling centers (budget cycle) or dispatch hydration trucks/wellness checks (today) -> call `explain_location_heat` or `run_model_predictions` on `heat_offset_model` (uses `ML.EXPLAIN_PREDICT`), then weigh `predicted_heat_offset_f` alongside `no_vehicle_pct`, `poverty_pct`, `median_age`, and `total_pop`.'
+  - 'Why a specific intersection, neighborhood ("south side", "Oak Cliff", "West Dallas", "Pleasant Grove", "Fair Park"), or census tract is hotter than nearby blocks -> call `explain_location_heat(area_or_direction, lat, lon, top_n)` which runs `ML.EXPLAIN_PREDICT`, unpacks the nested `top_feature_attributions` array, and combines 7-year GHCN station heat frequency.'
+  - 'How often Dallas crosses dangerous heat thresholds (95 F / 100 F / 105 F) or whether multi-year heat is worsening -> query `v_station_heat_frequency` or `station_daily_temps` (7-year GHCN-Daily history, 2019-2025). Never use single-day `heat_observations` to answer frequency questions.'
+  - 'Who lives around a candidate site (population, median age, income, poverty rate, households without a car) -> query `v_tract_heat_features` or `tract_demographics` by `geo_id` or bounding box (`tract_lat`, `tract_lon`).'
+  - 'Equity audit ("did our recommendations reach the neighborhoods that need help most?") -> call `audit_recommendations_equity(tract_ids_csv, top_n)` to compare the recommended tracts average `poverty_rate`, `no_vehicle_rate`, `median_income`, and `median_age` against the Dallas citywide averages in `tract_demographics`. Explicitly state that race was excluded from model training inputs and is evaluated only as a post-hoc outcome audit.'
+  - 'Street intersection names, walking routes, or nearby public cooling facilities (libraries, rec centers) -> use the Google Maps MCP tools (`maps`) to geocode intersections or find nearby facilities, then join to `v_tract_heat_features` by coordinates.'
+  - 'Live/upcoming heat wave forecast for Dallas -> call `get_forecast(latitude=32.7767, longitude=-96.7970, days=7)` and add the tract `predicted_heat_offset_f` to the regional forecast high to estimate street-level exposure.'
+  - 'Full Placement Recommendation, site-vs-site trade-off memo, or City Council proposal brief -> call `response_team`, and then call `request_approval` before finalizing any cooling center capital allocation or emergency dispatch.'
+  - 'Always frame model predictions as an OFFSET in degrees F above/below the Dallas average (`+X.X F hotter than the city mean`), never as an absolute temperature, and state honest limits (single-day Heat Watch campaign, sparse GHCN stations, cannot simulate post-intervention cooling).'
+
+live_api:
+  enabled: true
+  allowed_hosts:
+    - "api.open-meteo.com"
+    - "gis.nnvl.noaa.gov"
+
+a2a_description: >
+  Dallas Urban Heat & Climate Resilience specialist agent. Answers microclimate heat offset predictions
+  (ML.EXPLAIN_PREDICT), 7-year extreme heat station frequency, census tract vulnerability, and cooling center siting.
+
+pipeline: {}
+
+demo_questions:
+  - "How many street-level heat observations and census tracts are loaded for Dallas, what is the intra-city temperature spread, and how many days per year has Dallas crossed 100 F since 2019?"
+  - {q: "We can fund three permanent cooling centers this budget cycle and one mobile hydration unit for tomorrow's 102 F forecast. Which census tracts rank highest using our BQML model, and which features drive their heat offset?", expect_tools: [run_model_predictions]}
+  - {q: "Chart the top 8 Dallas candidate tracts by predicted heat offset (F above city average) alongside their no-vehicle household percentage.", expect_tools: [visualization_agent]}
+  - {q: "Draft the Placement Recommendation and Council Proposal for our top 3 permanent cooling centers and 1 mobile hydration unit in Dallas, including the 7-year station heat frequency, ML.EXPLAIN_PREDICT attributions, and a full Equity Audit comparing our selected tracts against the Dallas citywide average.", expect_tools: [response_team]}

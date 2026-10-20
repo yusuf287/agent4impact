@@ -2,6 +2,7 @@
 kit web | kit ui | kit cli    — run locally."""
 import os
 import re
+import shutil
 import subprocess
 import sys
 
@@ -30,19 +31,23 @@ def deploy(args):
     dom["_dataset"] = os.environ.get("BQ_DATASET", dom.get("_dataset", ""))
     D.FROZEN.write_text(yaml.safe_dump(dom, sort_keys=False, allow_unicode=True), encoding="utf-8")
     ops.log(f"Froze domain into {D.FROZEN.name} (removed after deploy)")
+    # ADK packages ONLY the agent folder and reads requirements.txt / .env from it (the
+    # --requirements_file / --staging_bucket flags are deprecated and ignored), so stage them there.
+    agent_dir = ROOT / "kit_agent"
+    staged = []
+    for src in ["requirements.txt", ".env"]:
+        if (ROOT / src).exists() and not (agent_dir / src).exists():
+            shutil.copy(ROOT / src, agent_dir / src)
+            staged.append(agent_dir / src)
     try:
         if args.mode == "runtime":
-            bucket = f"gs://{P}-agent-staging"
-            if _sh(["gcloud", "storage", "buckets", "describe", bucket], ops, True).returncode:
-                _sh(["gcloud", "storage", "buckets", "create", bucket, f"--location={region}"], ops, True)
-                ops.undo(f"gcloud storage rm -r {bucket}")
             pn = subprocess.run(["gcloud", "projects", "describe", P, "--format=value(projectNumber)"],
                                 capture_output=True, text=True, shell=WIN).stdout.strip()
-            (ROOT / "kit_agent" / ".agent_engine_config.json").write_text(
-                f'{{"service_account": "{pn}-compute@developer.gserviceaccount.com"}}', encoding="utf-8")
+            cfg = agent_dir / ".agent_engine_config.json"
+            cfg.write_text(f'{{"service_account": "{pn}-compute@developer.gserviceaccount.com"}}', encoding="utf-8")
+            staged.append(cfg)
             r = _sh(["adk", "deploy", "agent_engine", f"--project={P}", f"--region={region}",
-                     f"--staging_bucket={bucket}", f"--display_name={name}",
-                     "--requirements_file=./requirements.txt", "--otel_to_cloud", "kit_agent"], ops, True)
+                     f"--display_name={name}", "--otel_to_cloud", "kit_agent"], ops, True)
             m = re.findall(r"projects/[^\s]*reasoningEngines/\d+", r.stdout + r.stderr)
             if m:
                 res = m[-1]
@@ -50,16 +55,20 @@ def deploy(args):
                 ops.log(f"Agent Runtime resource: {res}  (register it in Gemini Enterprise > Agents > Add agent)")
                 ops.undo(f"python -c \"import vertexai;from vertexai import agent_engines as a;"
                          f"vertexai.init(project='{P}',location='{region}');a.get('{res}').delete(force=True)\"")
+            print("NOTE: human-approval pauses are not supported on Agent Runtime sessions; demo approval locally "
+                  "(kit ui / kit web).")
             sys.exit(r.returncode)
         else:
             r = _sh(["adk", "deploy", "cloud_run", "--project", P, "--region", region, "--service_name", name,
-                     "--a2a", "kit_agent", "--", "--allow-unauthenticated",
-                     "--set-env-vars=GOOGLE_CLOUD_LOCATION=global"], ops, True)
+                     "--a2a", "--env", "GOOGLE_CLOUD_LOCATION=global", "kit_agent", "--", "--allow-unauthenticated"],
+                    ops, True)
             ops.undo(f"gcloud run services delete {name} --region {region} --project {P} --quiet")
             sys.exit(r.returncode)
     finally:
         D.FROZEN.unlink(missing_ok=True)
-        ops.log("Unfroze domain")
+        for f in staged:
+            f.unlink(missing_ok=True)
+        ops.log("Unfroze domain and removed staged deploy files")
 
 
 def web(args):

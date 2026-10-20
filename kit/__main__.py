@@ -2,15 +2,14 @@
 import argparse
 import sys
 
-from kit import add_data, deploy_cmd, doctor, embed_cmd, model_cmd, rehearse, scaffold, sql_cmd, team_cmd
+from kit import add_data, deploy_cmd, doctor, model_cmd, rehearse, scaffold, sql_cmd, team_cmd
 
 EPILOG = """
 Typical flow:
-  kit new-domain mychallenge        # scaffold + activate
-  kit init                          # .env, APIs, dataset
-  kit add-data data.csv             # or ckan:<name>, or https://...  (auto-documented)
-  kit sql --view v_x --query "SELECT ..."
-  kit model risk --type logistic --source v_x --label y --train-filter "year<=2023" --predict-filter "year=2024" --id-cols name
+  kit init                          # .env, APIs  (data itself comes from the challenge notebook / load.sh)
+  kit add-data extra.csv            # bring-your-own data (auto-documented)
+  kit sql --file domains/urban_heat/views.sql
+  kit model heat_offset --type linear --source v_training --label offset_f --features auto
   kit roles; kit team-check         # edit domains/<x>/team.yaml
   kit doctor ; kit rehearse ; kit web ; kit deploy runtime
 """
@@ -23,7 +22,6 @@ def main():
     add_data.add_parser(sub)
     sql_cmd.add_parser(sub)
     model_cmd.add_parser(sub)
-    embed_cmd.add_parser(sub)
     doctor.add_parser(sub)
     rehearse.add_parser(sub)
     scaffold.add_parsers(sub)

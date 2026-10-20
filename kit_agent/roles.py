@@ -71,10 +71,13 @@ ROLES = {
         instruction="You are the VERIFIER. Re-check the key numbers and claims in the deliverable against the data. "
                     "Report each claim as supported or not, with evidence."),
     "approver": dict(
-        description="Presents the final proposed action(s) to the human for approval.",
-        tools=["approval"],
-        instruction="You are the APPROVAL GATE. Summarise the single recommended action and call request_approval with the "
-                    "action and rationale. Report the outcome. Never skip approval for actions that affect people."),
+        description="Prepares the proposed action(s) for human approval (the root agent asks the human).",
+        tools=[],
+        # Why no tool: the team runs inside an AgentTool (nested runner), so a confirmation request made here
+        # would never reach the human. The ROOT agent owns request_approval and calls it with this summary.
+        instruction="You are the APPROVAL PREPARER. Write a section titled PROPOSED ACTIONS FOR APPROVAL: numbered "
+                    "actions, each with who/where, deadline, rationale and the evidence it rests on. Mark every action "
+                    "PENDING HUMAN APPROVAL. Never present an action that affects people as already done."),
     "formatter": dict(
         description="Converts the final result into the structured schema for the UI.",
         tools=[],

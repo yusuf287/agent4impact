@@ -1,0 +1,96 @@
+# Multi-agent team for Challenge 1: Urban Heat Resilience (City of Dallas)
+# Validate with: python -m kit team-check
+# Note: Do NOT put literal curly braces in instructions or extra text.
+team:
+  name: response_team
+  description: >
+    Runs the full Dallas Urban Heat Placement Recommendation pipeline for complex siting, trade-off,
+    or City Council proposal requests: BQML offset predictions + ML.EXPLAIN_PREDICT attributions,
+    7-year GHCN station frequency + Maps street context, post-hoc Equity Audit, two-track action plan
+    (This Budget Cycle + Today), verified Council brief, human approval preparation, and structured output.
+  agents:
+    scout:
+      role: scout
+      tools: [bigquery, predictions, forecast]
+      output_key: scout_out
+      extra: >
+        Call explain_location_heat or run_model_predictions on heat_offset_model to get the top Dallas
+        census tracts with predicted_heat_offset_f and unpacked top_drivers from ML.EXPLAIN_PREDICT,
+        including both measured and unmeasured tracts. Also check the 7-day Dallas forecast via
+        get_forecast (latitude 32.7767, longitude -96.7970). Report exact geo_id, tract_lat, tract_lon,
+        predicted_heat_offset_f, top_drivers, total_pop, median_age, poverty_pct, and no_vehicle_pct.
+    investigator:
+      role: investigator
+      tools: [bigquery]   # add maps later (Maps MCP needs extra setup); keep end-to-end path simple first
+      reads: [scout_out]
+      output_key: investigator_out
+      extra: >
+        Query v_station_heat_frequency or station_daily_temps to report how many days per year Dallas
+        crosses 95 F and 100 F over the 7-year window (2019-2025) and whether the trend is rising.
+        Use spatial SQL on heat_observations and v_tract_heat_features to identify street-level peak
+        temperatures and neighborhood context for the top shortlisted tract coordinates.
+    skeptic:
+      role: skeptic
+      tools: [bigquery, predictions]
+      reads: [scout_out]
+      output_key: skeptic_out
+      extra: >
+        Execute the mandatory post-hoc Equity Audit on the shortlisted tracts by calling
+        audit_recommendations_equity (passing the shortlisted geo_id values in tract_ids_csv) to compare
+        the recommended tracts average poverty_rate, no_vehicle_rate, median_income, and median_age
+        against the Dallas citywide averages. Explicitly state that race was stripped from model inputs
+        and is audited only on the outcome. Flag any candidate tract where high heat offset is driven by
+        commercial asphalt with low residential population, and state honest limitations: Heat Watch is a
+        single-day afternoon snapshot, GHCN stations are sparse, and the model diagnoses heat drivers but
+        cannot simulate post-intervention temperature drop.
+    planner:
+      role: planner
+      reads: [scout_out, investigator_out, skeptic_out]
+      output_key: plan_out
+      extra: >
+        Design a two-track Placement Recommendation for Dallas: (1) This Budget Cycle — rank the top 3
+        permanent cooling center sites for City Council with capital justification anchored in the 7-year
+        100 F+ station frequency and ML.EXPLAIN_PREDICT attributions; (2) Today — rank the top mobile
+        hydration unit and wellness-check dispatch stops for tomorrow's extreme heat, prioritizing tracts
+        with the highest no_vehicle_rate and older residents. Adjust rankings if the Skeptic Equity Audit
+        found any high-need neighborhood was missed.
+    writer:
+      role: writer
+      reads: [scout_out, investigator_out, skeptic_out, plan_out]
+      output_key: report
+      extra: >
+        Draft the official City of Dallas Placement Recommendation and Council Proposal Brief with five
+        sections: (1) Executive Summary & Scenario, (2) Ranked Placement Recommendations (exact coordinates,
+        predicted offset in degrees F above the Dallas mean, ML.EXPLAIN_PREDICT feature attributions, and
+        resident demographics), (3) 7-Year Station Heat Frequency Justification, (4) Post-Hoc Equity Audit
+        (recommended tracts vs. Dallas citywide baseline for poverty, vehicle access, income, and age),
+        and (5) Honest Model & Data Limitations.
+    critic:
+      role: critic
+      reads: [report, scout_out, skeptic_out]
+      extra: >
+        Verify that (1) every number traces to a tool output, (2) model predictions are described strictly
+        as temperature OFFSETS (+X.X F hotter than the Dallas campaign mean) and never confused with absolute
+        temperature, (3) ML.EXPLAIN_PREDICT feature attributions are cited for each site, (4) the Equity Audit
+        compares recommended tracts against the citywide average with real numbers, and (5) single-day campaign
+        and non-simulation limitations are stated plainly.
+    approver:
+      role: approver
+      reads: [report, plan_out]
+      output_key: approval_out
+      extra: >
+        Prepare PROPOSED ACTIONS FOR APPROVAL covering (1) submitting the 3 permanent cooling center capital
+        allocations to Dallas City Council and (2) dispatching the mobile hydration unit and wellness-check
+        teams for immediate heat response. Mark all actions PENDING HUMAN APPROVAL.
+    formatter:
+      role: formatter
+      output_schema: ActionPlan
+      reads: [report, approval_out]
+      output_key: final_plan
+  flow:
+    - scout
+    - parallel: [investigator, skeptic]
+    - planner
+    - loop: {agents: [writer, critic], max_iterations: 2}
+    - approver
+    - formatter

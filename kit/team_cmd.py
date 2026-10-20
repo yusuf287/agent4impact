@@ -3,8 +3,8 @@ from kit.common import D
 from kit_core import teamspec
 
 ROLE_NAMES_FILE = "kit_agent/roles.py"
-TOOL_NAMES = ["bigquery", "predictions", "semantic_search", "live_api", "ec_alerts", "forecast", "open_data",
-              "vision", "approval", "state", "exit_loop", "google_search", "maps", "viz"]
+TOOL_NAMES = ["bigquery", "predictions", "live_api", "forecast", "approval", "state", "exit_loop",
+              "google_search", "maps", "viz"]
 
 
 def _roles_and_schemas():

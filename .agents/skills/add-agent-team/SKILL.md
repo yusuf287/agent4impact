@@ -14,7 +14,7 @@ Every agent must have a reason you can say in one sentence. 3–5 agents. If an 
    - `flow:` list; use `- parallel: [a, b]` and `- loop: {agents: [writer, critic], max_iterations: 3}`.
    - Each agent appears once in `flow`. `reads` must name keys produced EARLIER (loop feedback excepted).
    - `google_search` must be the only tool on that agent. `output_schema` agents cannot have tools (put a formatter at the end).
-   - Add `approver` (tool `approval`) before any step that sends/dispatches/orders.
+   - Add role `approver` (no tools) before any step that sends/dispatches/orders; it writes PROPOSED ACTIONS FOR APPROVAL and the root agent asks the human.
    - Custom agent: `role: custom` + `instruction: "..."` (no literal curly braces).
 3. To define a new structured output: add a Pydantic class and register it in `SCHEMAS` in `kit_agent/schemas.py`.
 4. `python -m kit team-check` until clean, then `python -m kit web` and open the graph/trace view.

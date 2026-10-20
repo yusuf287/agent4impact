@@ -2,13 +2,9 @@
 
   bigquery          generic SQL over the dataset (read-only)
   predictions       list_models + run_model_predictions (BQML)
-  semantic_search   vector search (after `kit embed`)
   live_api          allow-listed fetch_live_json
-  ec_alerts         Environment Canada alerts
   forecast          Open-Meteo forecast
-  open_data         CKAN search (Toronto Open Data by default)
-  vision            analyze_image (photo -> structured text)
-  approval          human-in-the-loop (pauses for Approve/Reject)
+  approval          human-in-the-loop (pauses for Approve/Reject) — ROOT agent only; inside a team it cannot pause
   state             append_to_state
   exit_loop         end a LoopAgent
   google_search     Google Search grounding (must be the ONLY tool on that agent)
@@ -34,7 +30,10 @@ def _approval_tool():
 def _maps_tool():
     import google.auth
     import google.auth.transport.requests as gtr
-    from google.adk.tools.mcp_tool import MCPToolset, StreamableHTTPConnectionParams
+    try:  # ADK 2.x name
+        from google.adk.tools.mcp_tool import McpToolset as _Toolset, StreamableHTTPConnectionParams
+    except ImportError:  # ADK 1.x
+        from google.adk.tools.mcp_tool import MCPToolset as _Toolset, StreamableHTTPConnectionParams
 
     def maps_auth_headers(*_a, **_k) -> dict:
         """Fresh OAuth token for the Maps Grounding Lite MCP server (copy the lab's own header function if this fails)."""
@@ -43,7 +42,7 @@ def _maps_tool():
         return {"Authorization": f"Bearer {creds.token}",
                 "x-goog-user-project": os.environ.get("GOOGLE_CLOUD_PROJECT", project or "")}
 
-    return MCPToolset(connection_params=StreamableHTTPConnectionParams(
+    return _Toolset(connection_params=StreamableHTTPConnectionParams(
         url="https://mapstools.googleapis.com/mcp", timeout=15), header_provider=maps_auth_headers)
 
 
@@ -53,8 +52,8 @@ class Registry:
         self._cache: dict = {}
 
     def names(self):
-        return ["bigquery", "predictions", "semantic_search", "live_api", "ec_alerts", "forecast", "open_data",
-                "vision", "approval", "state", "exit_loop", "google_search", "maps", "viz"]
+        return ["bigquery", "predictions", "live_api", "forecast", "approval", "state", "exit_loop",
+                "google_search", "maps", "viz"]
 
     def get(self, name: str) -> list:
         """Returns a LIST of tool objects for one registry name."""
@@ -62,14 +61,15 @@ class Registry:
             return self._cache[name]
         f = FunctionTool
         table = {
-            "bigquery": lambda: [self._bq],
-            "predictions": lambda: [f(func=T.list_models), f(func=T.run_model_predictions)],
-            "semantic_search": lambda: [f(func=T.semantic_search)],
+            "bigquery": lambda: [self._bq] if self._bq else [],
+            "predictions": lambda: [
+                f(func=T.list_models),
+                f(func=T.run_model_predictions),
+                f(func=T.explain_location_heat),
+                f(func=T.audit_recommendations_equity),
+            ],
             "live_api": lambda: [f(func=T.fetch_live_json)],
-            "ec_alerts": lambda: [f(func=T.get_ec_alerts)],
             "forecast": lambda: [f(func=T.get_forecast)],
-            "open_data": lambda: [f(func=T.search_open_data)],
-            "vision": lambda: [f(func=__import__("kit_agent.tools.vision", fromlist=["x"]).analyze_image)],
             "approval": lambda: [_approval_tool()],
             "state": lambda: [f(func=T.append_to_state)],
             "exit_loop": lambda: [exit_loop],

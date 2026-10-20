@@ -31,7 +31,7 @@ def build_deep_dive_pipeline(bigquery_toolset) -> SequentialAgent:
         description="Gathers the quantitative evidence for the request.",
         instruction=_p("analyst", "Query BigQuery to gather the key facts and numbers for the user's request. "
                        "Return a compact evidence summary with figures and table names used."),
-        tools=[bigquery_toolset], output_key="analysis")
+        tools=[t for t in [bigquery_toolset] if t], output_key="analysis")
 
     risk_assessor = Agent(
         name="risk_assessor", model=m, generate_content_config=cfg,

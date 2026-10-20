@@ -36,26 +36,6 @@ def fetch_live_json(url: str) -> dict:
     return _get(url)
 
 
-def get_ec_alerts(bbox: str = "-79.7,43.5,-79.0,43.9", limit: int = 20) -> dict:
-    """Get current Environment Canada weather alerts (heat, storm, wildfire smoke) inside a bounding box.
-
-    Use for live severe-weather or heat-warning status in Canada. Default box covers Toronto.
-
-    Args:
-        bbox: "min_lon,min_lat,max_lon,max_lat".
-        limit: max alerts to return.
-
-    Returns:
-        dict with alert feature properties (event, headline, onset/expiry, area).
-    """
-    res = _get("https://api.weather.gc.ca/collections/weather-alerts/items",
-               {"f": "json", "bbox": bbox, "limit": limit})
-    if res["status"] != "success":
-        return res
-    feats = res["data"].get("features", [])
-    return {"status": "success", "count": len(feats), "alerts": [f.get("properties", {}) for f in feats]}
-
-
 def get_forecast(latitude: float, longitude: float, days: int = 3) -> dict:
     """Get the daily weather forecast (max/min/feels-like temperature, rain) for a latitude/longitude.
 
@@ -76,26 +56,3 @@ def get_forecast(latitude: float, longitude: float, days: int = 3) -> dict:
     if res["status"] == "success":
         res["data"] = res["data"].get("daily", res["data"])
     return res
-
-
-def search_open_data(query: str, rows: int = 5) -> dict:
-    """Search the city open-data portal (CKAN) for datasets matching a keyword.
-
-    Use to discover extra datasets; returns names and resource URLs the user can load with `kit add-data ckan:<name>`.
-
-    Args:
-        query: keywords, e.g. "cooling centres".
-        rows: max datasets.
-
-    Returns:
-        dict with datasets (name, title, resources).
-    """
-    base = DOMAIN.get("open_data", {}).get("ckan_base", "https://ckan0.cf.opendata.inter.prod-toronto.ca")
-    res = _get(f"{base}/api/3/action/package_search", {"q": query, "rows": max(1, min(int(rows), 10))})
-    if res["status"] != "success":
-        return res
-    out = [{"name": p["name"], "title": p["title"],
-            "resources": [{"name": r.get("name"), "format": r.get("format"), "url": r.get("url")}
-                          for r in p.get("resources", [])[:4]]}
-           for p in res["data"].get("result", {}).get("results", [])]
-    return {"status": "success", "datasets": out}

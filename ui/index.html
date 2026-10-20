@@ -38,9 +38,8 @@ const ev=(cls,who,title,data)=>{const d=document.createElement('div');d.classNam
   d.innerHTML='<span class="who"></span><b></b><code></code>';
   d.children[0].textContent=who||'';d.children[1].textContent=title;d.children[2].textContent=data||'';
   trace.appendChild(d);trace.scrollTop=1e9};
-f.onsubmit=async e=>{e.preventDefault();const m=q.value.trim();if(!m)return;q.value='';b.disabled=true;
-  add('me',m);ev('', '', '▶ '+m.slice(0,60));let last=null;
-  const r=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:sid,message:m})});
+async function stream(url,body){b.disabled=true;let last=null;
+  const r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
   const rd=r.body.getReader(),dec=new TextDecoder();let buf='';
   while(true){const {done,value}=await rd.read();if(done)break;buf+=dec.decode(value,{stream:true});
     let i;while((i=buf.indexOf('\n\n'))>=0){const line=buf.slice(0,i);buf=buf.slice(i+2);
@@ -48,9 +47,18 @@ f.onsubmit=async e=>{e.preventDefault();const m=q.value.trim();if(!m)return;q.va
       if(e.kind==='session')sid=e.session_id;
       else if(e.kind==='tool_call')ev('',e.author,'🔧 '+e.name,e.data);
       else if(e.kind==='tool_result')ev('res',e.author,'✔ '+e.name,e.data);
+      else if(e.kind==='confirm')askApproval(e.call_id,e.data);
       else if(e.kind==='text'){last=last||add('',''); last.textContent=(last.textContent?last.textContent+'\n':'')+e.data;}
       else if(e.kind==='image'){last=last||add('','');const im=document.createElement('img');im.src=e.data;last.appendChild(im)}
       else if(e.kind==='error'){ev('err','','⚠ error',e.data);add('','Something went wrong: '+e.data)}
     }}
-  b.disabled=false;q.focus()};
+  b.disabled=false;q.focus()}
+function askApproval(id,data){ev('err','human','⏸ approval needed',data);
+  const d=add('approve','Approval needed:\n'+data+'\n');
+  for(const [label,ok] of [['Approve',true],['Reject',false]]){const x=document.createElement('button');x.textContent=label;
+    x.style.marginRight='8px';if(!ok)x.style.background='var(--warn)';
+    x.onclick=()=>{d.querySelectorAll('button').forEach(y=>y.disabled=true);ev(ok?'res':'err','human',ok?'✔ approved':'✖ rejected');
+      stream('/api/confirm',{session_id:sid,call_id:id,approved:ok})};d.appendChild(x)}}
+f.onsubmit=e=>{e.preventDefault();const m=q.value.trim();if(!m)return;q.value='';
+  add('me',m);ev('', '', '▶ '+m.slice(0,60));stream('/api/chat',{session_id:sid,message:m})};
 </script></body></html>

@@ -1,5 +1,4 @@
-"""kit new-domain <name>   copy domains/_template -> domains/<name> and point .env at it
-kit use <name>          switch the active domain (+ BQ_DATASET)
+"""kit use <name>          switch the active domain (+ BQ_DATASET)
 kit init                create .env, enable APIs, create the dataset"""
 import re
 import shutil
@@ -18,18 +17,6 @@ def _set_env(key: str, val: str):
     else:
         text += f"\n{key}={val}\n"
     f.write_text(text, encoding="utf-8")
-
-
-def new_domain(args):
-    ops = Ops("new-domain")
-    dst = ROOT / "domains" / args.name
-    if dst.exists():
-        raise SystemExit(f"{dst} exists")
-    shutil.copytree(ROOT / "domains" / "_template", dst)
-    ops.undo(f"rm -rf '{dst}'")
-    (dst / "data").mkdir(exist_ok=True)
-    use(args)
-    ops.log(f"Created domains/{args.name}. Edit domain.yaml (persona, mission, routing), then `kit add-data ...`")
 
 
 def use(args):
@@ -75,10 +62,6 @@ def init(args):
 
 
 def add_parsers(sub):
-    p = sub.add_parser("new-domain", help="scaffold domains/<name> from the template and activate it")
-    p.add_argument("name")
-    p.add_argument("--dataset")
-    p.set_defaults(fn=new_domain)
     p = sub.add_parser("use", help="switch the active domain")
     p.add_argument("name")
     p.add_argument("--dataset")

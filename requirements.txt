@@ -1,5 +1,5 @@
 google-cloud-aiplatform[agent_engines,adk]>=1.118.0
-google-adk[a2a,otel-gcp]>=1.31.0
+google-adk[a2a]>=2.0   # code also falls back to 1.x import paths
 google-genai
 google-cloud-bigquery
 pyarrow

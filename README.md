@@ -1,61 +1,45 @@
-# impact-agent — Agents for Impact plug-in kit
+# Heat Planning Assistant — Agents for Impact 2026, Challenge 1 (Urban Heat)
 
-Domain-agnostic ADK multi-agent kit. **Plug in data, models, tools and agents with one command or one YAML edit.**
-Worked example: **food equity** (`domains/food_equity`, synthetic data). Antigravity-ready (`AGENTS.md`, `.agents/skills/`).
+An ADK agent that helps a city planner decide where to put heat help: predicts how much hotter a location runs
+than the city average (BigQuery ML), explains why, shows who lives there, drafts the council proposal, and audits
+whether the picks reached the people who need it most. Details: `docs/CHALLENGE.md`.
 
 ```
-impact-agent/
-  README.md  AGENTS.md          this file · rules for AI coding agents (Antigravity reads AGENTS.md)
-  docs/                         docs/PLAYBOOK.md (event strategy) · ANTIGRAVITY.md (setup + prompts) · IDEAS.md (ideas, decision rule, fact-check list)
-  kit/                          the CLI:  python -m kit <command>
-  kit_agent/                    ADK agent (root + viz agent + YAML-defined team); core/ is ADK-free
-  domains/<name>/               domain.yaml · team.yaml · generated.yaml   (food_equity example, lights_out draft, _template)
-  ui/                           demo UI with live tool-call trace
-  scripts/                      bash helpers, smoke_test.py, agent_card.template.json
-  .agents/skills/               7 Antigravity skills
-  logs/  rollback/              action log and undo scripts (kept forever)
-  .archive/                     zip of your earlier scaffold (v1)
+README.md  AGENTS.md            this file · rules for AI coding agents
+docs/CHALLENGE.md               objective, must-haves, judging, traps
+domains/urban_heat/             domain.yaml (prompt, tables, routing) · team.yaml (agent team)
+kit_agent/                      the ADK agent (root agent, tools, team builder)
+kit/                            CLI: python -m kit <command>
+ui/                             demo UI: chat + live tool trace + Approve/Reject
+scripts/                        smoke_test.py · deploy.sh · rollback_all.sh
+.agents/skills/                 Antigravity skills
+logs/  rollback/                action log + undo scripts (kept)
+.archive/                       zipped older material (not used)
 ```
 
-## The plug-in commands
-| You want to… | Command |
-|---|---|
-| start a new challenge | `python -m kit new-domain <name>` · `python -m kit init` |
-| add data (file / URL / Toronto Open Data) | `python -m kit add-data <path\|url\|ckan:name>` → loads, snake-cases, **AI-documents every column** |
-| build an agent-friendly view | `python -m kit sql --view v_x --query "SELECT …${PROJECT_ID}.${DATASET}.t…"` |
-| add an ML model | `python -m kit model NAME --type logistic\|linear\|boosted_class\|boosted_reg\|kmeans\|arima --source v_x --label y --features auto --train-filter … --predict-filter … --id-cols …` → trains, evaluates on hold-out, tests the predict query, registers it for the agent |
-| semantic search (experimental) | `python -m kit embed --table t --id-col id --text-col txt` |
-| add/modify agents | edit `domains/<x>/team.yaml` (14 roles, 14 tools, sequential/parallel/loop, structured output, human approval); `python -m kit roles` · `team-check` |
-| add a live API | copy `get_forecast` in `kit_agent/tools/live_api.py`, register in `registry.py` (or use `fetch_live_json` + `live_api.allowed_hosts`) |
-| preflight (8 AM!) | `python -m kit doctor --llm` |
-| run | `python -m kit web` (ADK trace/graph) · `python -m kit ui` (demo UI) · `python -m kit cli` |
-| rehearse | `python -m kit rehearse` (runs `demo_questions`, checks expected tools, saves transcript) |
-| deploy | `python -m kit deploy runtime` / `a2a` |
-| undo | `bash scripts/rollback_all.sh` |
-
-Every command appends to `logs/operations.log` and writes an undo script to `rollback/`. Nothing is auto-deleted.
-
-## Built-in agent roles
-scout · analyst · investigator · skeptic · planner · triage · translator · designer · writer · critic (exits loops) · verifier · approver (human approval) · formatter (Pydantic `ActionPlan`) · custom.
-
-## Rehearsal (≈30 min, any project incl. lab projects)
+## Setup (Cloud Shell, from the repo root)
 ```bash
-python -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt   # Windows: .venv\Scripts\activate
-python -m kit init && python -m kit doctor --llm
-python domains/food_equity/gen_data.py domains/food_equity/data
-bash scripts/load_data.sh domains/food_equity/data --views --model      # or: kit add-data each CSV, kit sql --view, kit model
-python -m kit rehearse && python -m kit web
-python -m kit new-domain scratch && python -m kit add-data <any csv> && python -m kit use food_equity   # test plug-in flow
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+python -m kit init                 # creates .env (project, region us-east1, dataset a4i_climate), enables APIs
+python -m kit doctor --llm         # everything should be OK
+python scripts/smoke_test.py "What tables do you have?"
+python -m kit web                  # ADK dev UI   ·   python -m kit ui  -> our demo UI on :8080
 ```
+Data comes from the challenge notebook (Colab Enterprise) or `bash scripts/load.sh <city>` in the team repo.
 
-## Honest status
-- **Not run against live Google Cloud from here** (no network in my sandbox). Syntax-checked; SQL generators, domain merge, team validation and CLI loading were unit-tested offline. First real run = your rehearsal.
-- Most likely breakages: ADK import paths/signatures (labs used 1.30–1.33; event says ADK v2), `FunctionTool(require_confirmation=…)`, BigQuery remote-model/embedding SQL (`kit embed` is experimental), Maps MCP header function. Fix in one place: `registry.py` / `agent.py`.
-- Corporate laptops may block tools: use a personal laptop.
+## Commands
+| Need | Command |
+|---|---|
+| View / SQL | `python -m kit sql --view v_x --query "SELECT …"` · `--file f.sql` |
+| Train the offset model | `python -m kit model heat_offset --type linear --source v_training --label offset_f --features auto` |
+| Extra data (check license) | `python -m kit add-data <file\|url> --table t` |
+| Agent team | edit `domains/urban_heat/team.yaml` · `python -m kit team-check` |
+| Rehearse demo | `python -m kit rehearse` |
+| Deploy | `python -m kit deploy runtime` (Agent Runtime) · `a2a` (Cloud Run) |
+| Undo | `bash scripts/rollback_all.sh` |
 
-## First 15 minutes
-1. `python -m venv .venv`, activate, `pip install -r requirements.txt`
-2. `gcloud auth application-default login`, `cp .env.example .env`, fill in project
-3. `python -m kit doctor`, then read `docs/IDEAS.md`
-
-**Check once ADK is installed:** your v1 scaffold (in `.archive`) was verified on google-adk 2.12 (BigQuery imports under `google.adk.integrations.bigquery`). This kit has not been run against ADK yet: run `python scripts/smoke_test.py` and fix imports in `kit_agent/agent.py` and `registry.py` if needed.
+## Status
+Agent code was checked against ADK 2.x source but not yet run against a live project: run the smoke test first.
+Still to build: training view + model SQL, the custom `explain_location` tool (ML.EXPLAIN_PREDICT), BigQuery MCP
+connection, equity-audit tool.

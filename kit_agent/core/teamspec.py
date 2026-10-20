@@ -64,6 +64,9 @@ def validate(team: dict, roles: dict, tool_names: list, schemas: dict) -> list:
             errs.append(f"{n}: google_search must be the only tool on an agent")
         if a.get("output_schema") and a["output_schema"] not in schemas:
             errs.append(f"{n}: unknown output_schema '{a['output_schema']}'. Schemas: {sorted(schemas)}")
+        if "approval" in tl:
+            errs.append(f"{n}: the 'approval' tool cannot pause inside the team (it runs as a nested AgentTool). "
+                        "Use role 'approver' (prepares the proposal); the root agent asks the human via request_approval")
         if a.get("output_schema") and a.get("tools"):
             errs.append(f"{n}: output_schema agents cannot use tools (ADK limitation) — split into two agents")
         if a.get("output_key"):

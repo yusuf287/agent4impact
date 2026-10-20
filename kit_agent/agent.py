@@ -3,52 +3,61 @@
   root_agent
    |- BigQueryToolset (read-only)     SQL over structured data
    |- list_models / run_model_predictions   any trained BQML model (kit model)
-   |- semantic_search                 vector search (kit embed), if configured
-   |- live tools                      fetch_live_json / get_ec_alerts / get_forecast / search_open_data
-   |- analyze_image                   multimodal (photo -> structured text)
+   |- live tools                      fetch_live_json / get_forecast (live_api.enabled)
    |- AgentTool(visualization_agent)  charts via BuiltInCodeExecutor (must be isolated)
    |- AgentTool(team)                 YAML-defined multi-agent team (team.yaml), else default deep dive
    |- Maps MCP                        ENABLE_MAPS_MCP=1
    `- RemoteA2aAgent                  REMOTE_A2A_CARD=path/to/card.json
 """
+import logging
 import os
 
 import google.auth
 from google.adk.agents import Agent
-from google.adk.tools import FunctionTool
 from google.adk.tools.agent_tool import AgentTool
-from google.adk.tools.bigquery import BigQueryCredentialsConfig, BigQueryToolset
 
-from .config import DOMAIN
+try:  # ADK 2.x location (verified on 2.12)
+    from google.adk.integrations.bigquery import BigQueryCredentialsConfig, BigQueryToolset
+    from google.adk.integrations.bigquery.config import BigQueryToolConfig, WriteMode
+except ImportError:  # ADK 1.x (labs)
+    from google.adk.tools.bigquery import BigQueryCredentialsConfig, BigQueryToolset
+    from google.adk.tools.bigquery.config import BigQueryToolConfig, WriteMode
+
+from .config import DATASET, DOMAIN, PROJECT_ID
 from .model import make_model, shared_config
-from .prompts import root_instructions
+from .prompts import as_provider, root_instructions
 from .registry import Registry
 from .team import build_team
 from .viz import build_visualization_agent
 from .workflow import build_deep_dive_pipeline
 
-# ---- BigQuery (read-only guardrail when the ADK version supports it) -----
-credentials, _ = google.auth.default()
-_cred_cfg = BigQueryCredentialsConfig(credentials=credentials)
-try:
-    from google.adk.tools.bigquery.config import BigQueryToolConfig, WriteMode
-    bigquery_toolset = BigQueryToolset(credentials_config=_cred_cfg,
-                                       bigquery_tool_config=BigQueryToolConfig(write_mode=WriteMode.BLOCKED))
-except Exception:
-    bigquery_toolset = BigQueryToolset(credentials_config=_cred_cfg)
+log = logging.getLogger(__name__)
 
+
+# ---- BigQuery: read-only; agent still loads without credentials (fix with gcloud auth application-default login)
+def _bigquery_toolset():
+    try:
+        creds, _ = google.auth.default()
+    except Exception as e:
+        log.warning("No Google credentials (%s). BigQuery tools will fail until you run "
+                    "`gcloud auth application-default login`.", e)
+        return None
+    cfg = dict(write_mode=WriteMode.BLOCKED)
+    try:
+        tool_cfg = BigQueryToolConfig(**cfg, default_project_id=PROJECT_ID or None, default_dataset_id=DATASET or None)
+    except Exception:  # older ADK without default ids
+        tool_cfg = BigQueryToolConfig(**cfg)
+    return BigQueryToolset(credentials_config=BigQueryCredentialsConfig(credentials=creds),
+                           bigquery_tool_config=tool_cfg)
+
+
+bigquery_toolset = _bigquery_toolset()
 visualization_agent = build_visualization_agent()
 registry = Registry(bigquery_toolset, visualization_agent)
 
-tools = registry.many(["bigquery", "predictions", "viz"])
-if DOMAIN.get("vector_search"):
-    tools += registry.get("semantic_search")
+tools = registry.many(["bigquery", "predictions", "viz", "approval"])  # approval lives on the ROOT so it can pause
 if DOMAIN.get("live_api", {}).get("enabled"):
-    tools += registry.many(["live_api", "ec_alerts", "forecast"])
-if DOMAIN.get("open_data", {}).get("enabled"):
-    tools += registry.get("open_data")
-if DOMAIN.get("vision", {}).get("enabled"):
-    tools += registry.get("vision")
+    tools += registry.many(["live_api", "forecast"])
 if os.environ.get("ENABLE_MAPS_MCP") == "1":
     tools += registry.get("maps")
 
@@ -69,7 +78,7 @@ root_agent = Agent(
     model=make_model(),
     generate_content_config=shared_config(),
     description=DOMAIN["description"],
-    instruction=root_instructions(),
+    instruction=as_provider(root_instructions()),
     tools=tools,
     sub_agents=sub_agents,
 )
