@@ -1,0 +1,51 @@
+# Lights Out team: Scout -> (Access || Medical || Food) -> Coordinator -> Skeptic -> Approver -> Formatter
+# Each agent exists for a reason you can say in one sentence (see comments).
+team:
+  name: response_team
+  description: "Builds the full outage response plan: which towers, which people, by when, and the dispatches for human approval."
+  agents:
+    scout:   # finds the towers in the outage zone that are most exposed
+      role: scout
+      output_key: scout_out
+      extra: "Find towers inside the outage zone with elevators but no emergency power; rank by storeys, units, barrier-free units. Say which data is real vs SYNTHETIC."
+    access_agent:   # who is stuck upstairs
+      role: triage
+      output_key: access_out
+      reads: [scout_out]
+      extra: "Identify opted-in high-floor residents who cannot use stairs. Use only the opt-in table. Output building, floor, need, deadline."
+    medical_agent:   # who loses medical power, and when
+      role: triage
+      output_key: medical_out
+      reads: [scout_out]
+      extra: "Identify opted-in residents who depend on electrically powered medical devices and estimate the time left from the stated battery hours. NEVER give medical advice. Any life-threatening case: mark URGENT - CALL 911 and hand to a human."
+    food_agent:   # whose food spoils and where replacement food is
+      role: planner
+      output_key: food_out
+      reads: [scout_out]
+      extra: "Using the clock rules (cite the source of the spoilage hour), estimate how many homes lose refrigerated food and propose replacement-food deliveries or food-bank referrals."
+    coordinator:   # one plan, one clock
+      role: designer
+      output_key: plan_out
+      reads: [scout_out, access_out, medical_out, food_out]
+      extra: "Merge into ONE timeline for hours 0-6: what to do, where, in what order, with the reason and the deadline for each item."
+    skeptic:   # challenges the plan
+      role: skeptic
+      output_key: skeptic_out
+      reads: [plan_out, scout_out]
+      extra: "Challenge the plan: is the chosen centre/route also affected by the outage? Are any towers double-counted? Which assumptions are simulated? Recommend changes."
+    approver:   # human in the loop
+      role: approver
+      output_key: approval_out
+      reads: [plan_out, skeptic_out]
+    formatter:
+      role: formatter
+      output_schema: ActionPlan
+      output_key: final_plan
+      reads: [plan_out, skeptic_out, approval_out]
+  flow:
+    - scout
+    - parallel: [access_agent, medical_agent, food_agent]
+    - coordinator
+    - skeptic
+    - approver
+    - formatter

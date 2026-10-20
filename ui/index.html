@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Agent Console</title>
+<style>
+:root{--bg:#f7f8fa;--card:#fff;--ink:#1d2330;--mute:#6b7385;--line:#e3e6ec;--brand:#1a73e8;--ok:#188038;--warn:#b06000}
+@media (prefers-color-scheme:dark){:root{--bg:#12151c;--card:#1b2029;--ink:#e8ebf2;--mute:#98a1b3;--line:#2a3140;--brand:#8ab4f8;--ok:#81c995;--warn:#fdd663}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 system-ui,sans-serif;height:100vh;display:grid;grid-template-columns:1fr 380px}
+@media(max-width:800px){body{grid-template-columns:1fr;grid-template-rows:1fr 40vh}}
+main{display:flex;flex-direction:column;min-height:0}
+header{padding:12px 16px;border-bottom:1px solid var(--line);font-weight:600}
+#log{flex:1;overflow:auto;padding:16px;display:flex;flex-direction:column;gap:12px}
+.msg{max-width:780px;padding:10px 14px;border-radius:12px;background:var(--card);border:1px solid var(--line);white-space:pre-wrap}
+.msg.me{align-self:flex-end;background:var(--brand);color:#fff;border-color:var(--brand)}
+.msg img{max-width:100%;border-radius:8px;margin-top:8px}
+form{display:flex;gap:8px;padding:12px 16px;border-top:1px solid var(--line)}
+input{flex:1;padding:10px 12px;border-radius:10px;border:1px solid var(--line);background:var(--card);color:var(--ink);font:inherit}
+button{padding:10px 16px;border:0;border-radius:10px;background:var(--brand);color:#fff;font:inherit;cursor:pointer}
+button:disabled{opacity:.5}
+aside{border-left:1px solid var(--line);display:flex;flex-direction:column;min-height:0;background:var(--card)}
+#trace{flex:1;overflow:auto;padding:12px;display:flex;flex-direction:column;gap:8px;font-size:13px}
+.ev{border-left:3px solid var(--brand);padding:4px 8px;background:var(--bg);border-radius:4px}
+.ev.res{border-color:var(--ok)}.ev.err{border-color:var(--warn)}
+.ev b{display:block}.ev code{color:var(--mute);word-break:break-word;font-size:12px}
+.ev .who{color:var(--mute);font-size:11px}
+</style></head>
+<body>
+<main>
+  <header>Agent Console</header>
+  <div id="log"></div>
+  <form id="f"><input id="q" placeholder="Ask a question…" autocomplete="off" autofocus><button id="b">Send</button></form>
+</main>
+<aside><header>Agent trace (live)</header><div id="trace"></div></aside>
+<script>
+const log=document.getElementById('log'),trace=document.getElementById('trace'),f=document.getElementById('f'),q=document.getElementById('q'),b=document.getElementById('b');
+let sid='';
+const add=(cls,txt)=>{const d=document.createElement('div');d.className='msg '+cls;d.textContent=txt;log.appendChild(d);log.scrollTop=1e9;return d};
+const ev=(cls,who,title,data)=>{const d=document.createElement('div');d.className='ev '+cls;
+  d.innerHTML='<span class="who"></span><b></b><code></code>';
+  d.children[0].textContent=who||'';d.children[1].textContent=title;d.children[2].textContent=data||'';
+  trace.appendChild(d);trace.scrollTop=1e9};
+f.onsubmit=async e=>{e.preventDefault();const m=q.value.trim();if(!m)return;q.value='';b.disabled=true;
+  add('me',m);ev('', '', '▶ '+m.slice(0,60));let last=null;
+  const r=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:sid,message:m})});
+  const rd=r.body.getReader(),dec=new TextDecoder();let buf='';
+  while(true){const {done,value}=await rd.read();if(done)break;buf+=dec.decode(value,{stream:true});
+    let i;while((i=buf.indexOf('\n\n'))>=0){const line=buf.slice(0,i);buf=buf.slice(i+2);
+      if(!line.startsWith('data: '))continue;const e=JSON.parse(line.slice(6));
+      if(e.kind==='session')sid=e.session_id;
+      else if(e.kind==='tool_call')ev('',e.author,'🔧 '+e.name,e.data);
+      else if(e.kind==='tool_result')ev('res',e.author,'✔ '+e.name,e.data);
+      else if(e.kind==='text'){last=last||add('',''); last.textContent=(last.textContent?last.textContent+'\n':'')+e.data;}
+      else if(e.kind==='image'){last=last||add('','');const im=document.createElement('img');im.src=e.data;last.appendChild(im)}
+      else if(e.kind==='error'){ev('err','','⚠ error',e.data);add('','Something went wrong: '+e.data)}
+    }}
+  b.disabled=false;q.focus()};
+</script></body></html>

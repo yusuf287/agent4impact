@@ -1,0 +1,2 @@
+-- Optional. Prefer: python -m kit sql --view v_name --query "SELECT ..."
+-- (creates + AI-documents the view). Placeholders: ${PROJECT_ID} ${DATASET}

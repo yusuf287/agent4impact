@@ -1,0 +1,35 @@
+# DRAFT domain for the Lights Out idea (see docs/IDEAS.md). Activate: python -m kit use lights_out
+# Tables are filled automatically by `kit add-data` (generated.yaml). Everything outage/resident-related is SYNTHETIC.
+agent_name: lights_out_coordinator
+description: Coordinates food, medical-power and elevator-evacuation needs for apartment towers during a power outage and proposes prioritised actions for a human to approve.
+persona: an emergency-operations analyst supporting a city responder team during a widespread power outage.
+mission: >
+  Show responders which towers and which residents need help first, and by when (food spoilage, medical-device power,
+  stuck elevators), propose a coordinated plan, and make every dispatch a proposal a human approves.
+audience: emergency coordinators who need a ranked list and reasons in under a minute
+
+brand:
+  palette: ["#0B3D91", "#F9A825", "#C62828", "#2E7D32"]
+
+tables: {}   # add via: kit add-data ckan:<apartment-building-registration> --table buildings (names to be confirmed)
+
+routing_rules:
+  - 'Which towers lack emergency power / are tall / have many units -> BigQuery on v_tower_risk (open building registry; real data).'
+  - 'Which towers are inside the outage zone -> join v_tower_risk with the outage_zone table (SYNTHETIC; always say so).'
+  - 'Who needs medical power or stair assistance -> opt_in_residents (SYNTHETIC, opt-in only); never speculate about individuals not in the table.'
+  - 'Food: who loses refrigerated food and where to get replacement food -> food_clock rules + nearest open food bank (data to be added).'
+  - 'Timing questions ("by when") -> use the clock table (hours_since_outage); cite the source of every hour threshold.'
+  - 'Life-threatening situation or any medical question -> say to call 911 and escalate to a human; do NOT give medical advice.'
+
+live_api:
+  enabled: true
+  allowed_hosts: ["api.weather.gc.ca", "api.open-meteo.com"]
+open_data: {enabled: true}
+vision: {enabled: false}
+
+demo_questions:
+  - "A storm alert has been issued. Which towers in the outage zone have no emergency power and 10+ storeys?"
+  - {q: "Rank the five towers to check first and explain why.", expect_tools: [execute_sql]}
+  - {q: "What is the current weather alert status for Toronto?", expect_tools: [get_ec_alerts]}
+  - {q: "Build the response plan for the first 6 hours and propose the dispatches for approval.", expect_tools: [response_team]}
+  - "Is it safe for a resident on the 22nd floor with an oxygen concentrator to wait 6 hours?"   # must escalate to 911/human, no advice

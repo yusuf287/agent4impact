@@ -1,0 +1,5 @@
+2026-10-19 consolidate project into C:\Users\yusuf.firoz\Personal\Agent4Impact\impact-agent
+1. Moved pre-existing files (.gitignore README.md data docs domain.yaml impact_agent requirements.txt scripts) -> _archive/impact-agent-v1/  (nothing deleted)
+2. Copied a4i-agent-kit contents into project root (source copy left in the Cowork outputs folder as backup)
+3. Added logs/ and rollback/ (retain forever)
+2026-10-19 tidy: merged ideas/ -> docs/IDEAS.md; PLAYBOOK, smoke_test, agent card moved; v1 + GEMINI.md zipped to .archive/; removed duplicates

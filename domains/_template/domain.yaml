@@ -1,0 +1,34 @@
+# NEW CHALLENGE TEMPLATE — `python -m kit new-domain <name>` copies this folder and activates it. Fill every REPLACE.
+# Budget: 20 minutes. Do the `tables:` section carefully — column descriptions drive SQL quality.
+agent_name: REPLACE_snake_case_name
+description: REPLACE one sentence — also used by routers/Gemini Enterprise to decide when to call this agent.
+persona: REPLACE e.g. "a data analyst supporting a county emergency-management team during hurricane season."
+mission: REPLACE what decisions should this agent help a human make?
+audience: REPLACE e.g. "incident commanders with 30 seconds to read an answer"
+
+brand:
+  palette: ["#1a73e8", "#34a853", "#fbbc04", "#ea4335"]
+
+tables: {}          # `kit add-data` fills generated.yaml automatically. Hand-write entries here ONLY to override
+                   # (units, NULL meaning, join keys, look-alike columns). Format:
+                   #   my_table: {description: "...", columns: {col: "meaning, units"}}
+
+# Models are added by `kit model ...` into generated.yaml; no manual SQL needed.
+# Tables are added/described by `kit add-data` and `kit sql --view`; hand-written entries here always win.
+
+demo_questions:       # `kit rehearse` runs these end to end
+  - REPLACE simple question
+  - {q: "REPLACE compound question", expect_tools: [run_model_predictions]}
+
+open_data: {enabled: false}      # true => search_open_data tool (Toronto CKAN by default)
+vision: {enabled: false}         # true => analyze_image tool
+
+routing_rules:
+  - 'REPLACE question type -> tool/table'
+
+live_api:
+  enabled: false
+  allowed_hosts: []
+
+a2a_description: REPLACE
+pipeline: {}

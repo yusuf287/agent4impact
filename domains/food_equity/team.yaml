@@ -1,0 +1,19 @@
+# Example team: Scout -> (Skeptic || Planner) -> Writer<->Critic loop -> Formatter (structured ActionPlan)
+team:
+  name: response_team
+  description: "Runs the full analysis for complex or report-style requests: evidence, challenge, plan, brief."
+  agents:
+    scout:     {role: scout, output_key: scout_out,
+                extra: "Focus on neighborhoods with the highest predicted need and the largest populations."}
+    skeptic:   {role: skeptic, output_key: skeptic_out, reads: [scout_out],
+                extra: "Check whether low-outlet counts reflect true need or just small populations; check 2024 vs earlier years."}
+    planner:   {role: planner, output_key: plan_out, reads: [scout_out, skeptic_out],
+                extra: "Propose where to place two mobile pantries and why; consider distance to grocery and vehicle access."}
+    writer:    {role: writer, output_key: report, reads: [scout_out, skeptic_out, plan_out]}
+    critic:    {role: critic, reads: [report, scout_out]}
+    formatter: {role: formatter, output_schema: ActionPlan, output_key: final_plan, reads: [report]}
+  flow:
+    - scout
+    - parallel: [skeptic, planner]
+    - loop: {agents: [writer, critic], max_iterations: 3}
+    - formatter

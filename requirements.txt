@@ -1,0 +1,14 @@
+google-cloud-aiplatform[agent_engines,adk]>=1.118.0
+google-adk[a2a,otel-gcp]>=1.31.0
+google-genai
+google-cloud-bigquery
+pyarrow
+db-dtypes
+pandas
+openpyxl
+pydantic
+pyyaml
+requests
+python-dotenv
+fastapi
+uvicorn
