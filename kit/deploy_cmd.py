@@ -35,10 +35,25 @@ def deploy(args):
     # --requirements_file / --staging_bucket flags are deprecated and ignored), so stage them there.
     agent_dir = ROOT / "kit_agent"
     staged = []
-    for src in ["requirements.txt", ".env"]:
-        if (ROOT / src).exists() and not (agent_dir / src).exists():
-            shutil.copy(ROOT / src, agent_dir / src)
-            staged.append(agent_dir / src)
+    if (ROOT / "requirements.txt").exists() and not (agent_dir / "requirements.txt").exists():
+        shutil.copy(ROOT / "requirements.txt", agent_dir / "requirements.txt")
+        staged.append(agent_dir / "requirements.txt")
+    stale = agent_dir / ".env"
+    if stale.exists():  # a leftover kit_agent/.env would be used by ADK instead of ours
+        ops.log("Found existing kit_agent/.env; renaming it to kit_agent/.env.bak so the clean one is used")
+        stale.replace(agent_dir / ".env.bak")
+    if (ROOT / ".env").exists():
+        # Agent Runtime rejects env vars with empty values (400 "env[i].value: Required field is not set"),
+        # so stage only KEY=value lines that have a value; drop comments and blanks.
+        from dotenv import dotenv_values  # parse exactly like ADK does (quotes, comments, no-'=' lines -> None)
+        vals = {k: v for k, v in dotenv_values(ROOT / ".env").items() if k and v not in (None, "") and str(v).strip()}
+        keep = [f"{k}={v}" for k, v in vals.items()]
+        dropped = [k for k, v in dotenv_values(ROOT / ".env").items() if k not in vals]
+        if dropped:
+            ops.log(f"Not deploying empty settings: {dropped}")
+        (agent_dir / ".env").write_text("\n".join(keep) + "\n", encoding="utf-8")
+        staged.append(agent_dir / ".env")
+        ops.log(f"Staged .env for deploy with {len(keep)} non-empty variables")
     try:
         if args.mode == "runtime":
             pn = subprocess.run(["gcloud", "projects", "describe", P, "--format=value(projectNumber)"],
@@ -48,7 +63,12 @@ def deploy(args):
             staged.append(cfg)
             r = _sh(["adk", "deploy", "agent_engine", f"--project={P}", f"--region={region}",
                      f"--display_name={name}", "--otel_to_cloud", "kit_agent"], ops, True)
-            m = re.findall(r"projects/[^\s]*reasoningEngines/\d+", r.stdout + r.stderr)
+            out = r.stdout + r.stderr
+            failed = r.returncode != 0 or "Deploy failed" in out or "Failed to deploy" in out
+            m = re.findall(r"projects/[^\s]*reasoningEngines/\d+", out)
+            if failed:
+                ops.log("DEPLOY FAILED (ADK already cleaned up the half-created instance). Read the error above.")
+                sys.exit(1)
             if m:
                 res = m[-1]
                 (ROOT / "logs" / "last_runtime_resource.txt").write_text(res, encoding="utf-8")

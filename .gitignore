@@ -6,3 +6,4 @@ data_cache/
 kit_agent/_frozen_domain.yaml
 kit_agent/.agent_engine_config.json
 # NOTE: logs/ and rollback/ are intentionally NOT ignored (kept forever).
+.env.bak
