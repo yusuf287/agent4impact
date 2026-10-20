@@ -3,6 +3,7 @@
 Usage (in Cloud Shell):
     python scripts/evaluate_models.py
 """
+import math
 import os
 import pathlib
 import re
@@ -24,11 +25,13 @@ def print_metrics(label: str, rows):
     if not rows:
         print(f"  {label}: no evaluation rows returned")
         return
-    r = rows[0]
-    mae = getattr(r, "mean_absolute_error", 0.0)
-    rmse = getattr(r, "root_mean_squared_error", 0.0)
-    r2 = getattr(r, "r2_score", 0.0)
-    print(f"  {label:<34} | MAE: {mae:.3f} °F | RMSE: {rmse:.3f} °F | R²: {r2:.3f}")
+    r = dict(rows[0].items())
+    mae = r.get("mean_absolute_error", 0.0)
+    mse = r.get("mean_squared_error", 0.0)
+    rmse = math.sqrt(mse) if mse and mse > 0 else 0.0
+    r2 = r.get("r2_score", 0.0)
+    ev = r.get("explained_variance", 0.0)
+    print(f"  {label:<34} | MAE: {mae:.3f} °F | RMSE: {rmse:.3f} °F | R²: {r2:.3f} | ExpVar: {ev:.3f}")
 
 
 def main():
