@@ -180,7 +180,7 @@ WHERE max_temp_f IS NOT NULL
 GROUP BY year, station_id;
 
 -- STEP C: train the ElasticNet (L1+L2) linear model across all 29 features ---------------------
--- Evaluates on deterministic 20% hold-out (is_eval): MAE = 0.270 F, RMSE = 0.340 F, R2 = 0.583
+-- Evaluates on deterministic 20% hold-out (is_eval): MAE = 0.298 F, RMSE = 0.381 F, R2 = 0.478, ExpVar = 0.547
 CREATE OR REPLACE MODEL `a4i_climate.heat_offset_model`
 OPTIONS (
   model_type = 'LINEAR_REG',

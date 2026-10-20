@@ -215,7 +215,8 @@ models:
       - surrounding_3km_uvi
       - station_idw_summer_temp_f
     instructions: >
-      A BigQuery ML L1+L2 regularized LINEAR_REG model (`heat_offset_model`, R2 = 0.583, MAE = 0.270 F on unseen tracts)
+      A BigQuery ML L1+L2 regularized LINEAR_REG model (`heat_offset_model`, MAE = 0.298 F, RMSE = 0.381 F, R2 = 0.478,
+      Explained Variance = 0.547 on unseen tracts)
       trained across 29 physical, spatial, weather-station, and vulnerability features that predicts `heat_offset_f` —
       how many degrees Fahrenheit hotter (+) or cooler (-) a Dallas census tract runs relative to the citywide afternoon
       average — and calls `ML.EXPLAIN_PREDICT` to return the top per-feature attributions (`top_drivers`). Crucially, it
