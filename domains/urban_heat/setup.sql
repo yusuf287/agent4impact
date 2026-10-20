@@ -102,6 +102,7 @@ base AS (
       u.universal_vulnerability_index,
       (IFNULL(t.median_age, 35.0) * 0.25) + (COALESCE(t.demo_no_cars, 0.0) * 0.25) + (GREATEST(st.station_idw_summer_temp_f - 65.0, 0.0) * 0.30) + 10.0
     ), 2) AS universal_vulnerability_index,
+    u.universal_vulnerability_index AS raw_uvi,
     COALESCE(u.urban_density_status, CASE
       WHEN t.housing_density_sqkm >= 1000 THEN 'High Density - Urban Heat Island'
       WHEN t.housing_density_sqkm >= 400 THEN 'Moderate Density'
@@ -138,14 +139,14 @@ neighbors_3km AS (
     ROUND(AVG(b.pop_density_sqkm), 2)     AS surrounding_3km_pop_density,
     ROUND(AVG(b.poverty_rate), 4)         AS surrounding_3km_poverty_rate,
     ROUND(AVG(b.building_age_years), 1)   AS surrounding_3km_bldg_age,
-    ROUND(AVG(b.universal_vulnerability_index), 2) AS surrounding_3km_uvi
+    ROUND(COALESCE(AVG(b.raw_uvi), AVG(b.universal_vulnerability_index)), 2) AS surrounding_3km_uvi
   FROM base a
   JOIN base b
     ON ST_DWITHIN(ST_GEOGPOINT(a.tract_lon, a.tract_lat), ST_GEOGPOINT(b.tract_lon, b.tract_lat), 3000)
   GROUP BY a.geo_id
 )
 SELECT
-  b.*,
+  b.* EXCEPT(raw_uvi),
   CASE
     WHEN b.universal_vulnerability_index >= 85 THEN 'Critical'
     WHEN b.universal_vulnerability_index >= 61 THEN 'High'
