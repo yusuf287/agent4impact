@@ -135,10 +135,17 @@ def explain_location_heat(area_or_direction: str = "", lat: float = 0.0, lon: fl
       top_feature_attributions,
       CAST(total_pop AS INT64) AS total_pop,
       ROUND(median_age, 1) AS median_age,
+      ROUND(senior_share * 100, 1) AS senior_pct,
       CAST(median_income AS INT64) AS median_income,
       ROUND(poverty_rate * 100, 1) AS poverty_pct,
       ROUND(no_vehicle_rate * 100, 1) AS no_vehicle_pct,
-      ROUND(building_age_years, 0) AS building_age_years
+      ROUND(building_age_years, 0) AS building_age_years,
+      nearby_parks,
+      greenery_status,
+      cooling_center_type,
+      capacity_status,
+      ROUND(universal_vulnerability_index, 1) AS universal_vulnerability_index,
+      risk_level
     FROM ML.EXPLAIN_PREDICT(
       MODEL `{PROJECT_ID}.{DATASET}.heat_offset_model`,
       (SELECT * FROM `{PROJECT_ID}.{DATASET}.v_tract_heat_features` WHERE {where_clause}),
