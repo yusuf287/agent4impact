@@ -18,7 +18,8 @@ client = bigquery.Client(project=PROJECT)
 
 
 def run_query(sql: str):
-    return list(client.query(sql).result())
+    cfg = bigquery.QueryJobConfig(use_query_cache=False)
+    return list(client.query(sql, job_config=cfg).result())
 
 
 def print_metrics(label: str, rows):
