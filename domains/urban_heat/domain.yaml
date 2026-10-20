@@ -63,6 +63,31 @@ tables:
       households: Total count of households in the tract (FLOAT64).
       poverty_rate: Share of population below the federal poverty line, 0.0 to 1.0 (FLOAT64).
       no_vehicle_rate: Share of households without a vehicle (no_cars / households), 0.0 to 1.0 (FLOAT64).
+  tract_demographics_enriched:
+    description: >
+      Enriched Dallas census tract demographics and physical geography table including tract polygons (tract_geom),
+      land/water area (sq km), water fraction, population & housing density per sq km, and seniors aged 65+ (seniors_65_plus, senior_share).
+      Use this table when questions ask about senior population (65+), population density per sq km, water fraction, or exact tract polygons.
+    columns:
+      geo_id: 11-character Census tract FIPS code (STRING, primary key).
+      tract_lat: Tract centroid latitude (FLOAT64).
+      tract_lon: Tract centroid longitude (FLOAT64).
+      land_area_sqkm: Tract land area in square kilometers (FLOAT64).
+      water_area_sqkm: Tract water area in square kilometers (FLOAT64).
+      tract_geom: Census tract polygon geometry (GEOGRAPHY).
+      total_pop: Total resident population (FLOAT64).
+      median_age: Median resident age in years (FLOAT64).
+      median_income: Median household income in USD (FLOAT64).
+      housing_units: Total housing units (FLOAT64).
+      median_year_structure_built: Median construction year of residential structures (FLOAT64).
+      building_age_years: Approximate median building age in years (FLOAT64).
+      pop_density_sqkm: Resident population per square kilometer of land area (FLOAT64).
+      housing_density_sqkm: Housing units per square kilometer of land area (FLOAT64).
+      water_fraction: Share of tract area covered by water (FLOAT64).
+      seniors_65_plus: Count of residents aged 65 and older (FLOAT64).
+      senior_share: Share of residents aged 65 and older, 0.0 to 1.0 (FLOAT64).
+      poverty_rate: Share of population below the federal poverty line, 0.0 to 1.0 (FLOAT64).
+      no_vehicle_rate: Share of households without a vehicle, 0.0 to 1.0 (FLOAT64).
   v_tract_heat_features:
     description: >
       PREFERRED spatial analytical and ML feature view — one row per Dallas census tract combining street-level Heat Watch
@@ -154,6 +179,32 @@ models:
       )
       ORDER BY (predicted_heat_offset_f + (COALESCE(no_vehicle_rate, 0) * 10.0) + (COALESCE(poverty_rate, 0) * 5.0)) DESC
       LIMIT {top_n}
+  heat_forecast_model:
+    type: arima
+    source: station_daily_temps
+    label: max_temp_f
+    features:
+      - observation_date
+      - station_name
+      - max_temp_f
+    instructions: >
+      A BigQuery ML ARIMA_PLUS time-series model (`heat_forecast_model`) trained on 7 years of daily maximum temperatures
+      (`max_temp_f`) across Dallas GHCN weather stations (`station_name`). Call `run_model_predictions("heat_forecast_model", top_n=14)`
+      to forecast upcoming daily high temperatures and 90% prediction intervals per weather station. Combine this baseline
+      station forecast with a census tract's `predicted_heat_offset_f` from `heat_offset_model` to estimate localized street-level heat.
+    predict_sql: |
+      SELECT
+        station_name,
+        DATE(forecast_timestamp) AS forecast_date,
+        ROUND(forecast_value, 1) AS forecast_max_temp_f,
+        ROUND(prediction_interval_lower_bound, 1) AS lower_90_f,
+        ROUND(prediction_interval_upper_bound, 1) AS upper_90_f
+      FROM ML.FORECAST(
+        MODEL `{project}.{dataset}.heat_forecast_model`,
+        STRUCT(14 AS horizon, 0.90 AS confidence_level)
+      )
+      ORDER BY forecast_value DESC, forecast_date ASC
+      LIMIT {top_n}
 
 open_data: {enabled: false}
 vision: {enabled: false}
@@ -161,11 +212,11 @@ vision: {enabled: false}
 routing_rules:
   - 'Where to site cooling centers (budget cycle) or dispatch hydration trucks/wellness checks (today) -> call `explain_location_heat` or `run_model_predictions` on `heat_offset_model` (uses `ML.EXPLAIN_PREDICT`), then weigh `predicted_heat_offset_f` alongside `no_vehicle_pct`, `poverty_pct`, `median_age`, and `total_pop`.'
   - 'Why a specific intersection, neighborhood ("south side", "Oak Cliff", "West Dallas", "Pleasant Grove", "Fair Park"), or census tract is hotter than nearby blocks -> call `explain_location_heat(area_or_direction, lat, lon, top_n)` which runs `ML.EXPLAIN_PREDICT`, unpacks the nested `top_feature_attributions` array, and combines 7-year GHCN station heat frequency.'
-  - 'How often Dallas crosses dangerous heat thresholds (95 F / 100 F / 105 F) or whether multi-year heat is worsening -> query `v_station_heat_frequency` or `station_daily_temps` (7-year GHCN-Daily history, 2019-2025). Never use single-day `heat_observations` to answer frequency questions.'
-  - 'Who lives around a candidate site (population, median age, income, poverty rate, households without a car) -> query `v_tract_heat_features` or `tract_demographics` by `geo_id` or bounding box (`tract_lat`, `tract_lon`).'
+  - 'How often Dallas crosses dangerous heat thresholds (95 F / 100 F / 105 F) or whether multi-year heat is worsening -> query `v_station_heat_frequency` or `station_daily_temps` (7-year GHCN-Daily history, 2019-2025), and call `run_model_predictions("heat_forecast_model", top_n=14)` for ARIMA_PLUS station temperature projections. Never use single-day `heat_observations` to answer frequency questions.'
+  - 'Who lives around a candidate site (population, median age, seniors 65+, population density per sq km, income, poverty rate, households without a car) -> query `v_tract_heat_features` or `tract_demographics_enriched` by `geo_id` or bounding box (`tract_lat`, `tract_lon`).'
   - 'Equity audit ("did our recommendations reach the neighborhoods that need help most?") -> call `audit_recommendations_equity(tract_ids_csv, top_n)` to compare the recommended tracts average `poverty_rate`, `no_vehicle_rate`, `median_income`, and `median_age` against the Dallas citywide averages in `tract_demographics`. Explicitly state that race was excluded from model training inputs and is evaluated only as a post-hoc outcome audit.'
   - 'Street intersection names, walking routes, or nearby public cooling facilities (libraries, rec centers) -> use the Google Maps MCP tools (`maps`) to geocode intersections or find nearby facilities, then join to `v_tract_heat_features` by coordinates.'
-  - 'Live/upcoming heat wave forecast for Dallas -> call `get_forecast(latitude=32.7767, longitude=-96.7970, days=7)` and add the tract `predicted_heat_offset_f` to the regional forecast high to estimate street-level exposure.'
+  - 'Live/upcoming heat wave forecast for Dallas -> call `get_forecast(latitude=32.7767, longitude=-96.7970, days=7)` (Open-Meteo live weather) and/or `run_model_predictions("heat_forecast_model", top_n=14)` (BQML ARIMA_PLUS station forecast), and add the tract `predicted_heat_offset_f` to estimate street-level exposure.'
   - 'Full Placement Recommendation, site-vs-site trade-off memo, or City Council proposal brief -> call `response_team`, and then call `request_approval` before finalizing any cooling center capital allocation or emergency dispatch.'
   - 'Always frame model predictions as an OFFSET in degrees F above/below the Dallas average (`+X.X F hotter than the city mean`), never as an absolute temperature, and state honest limits (single-day Heat Watch campaign, sparse GHCN stations, cannot simulate post-intervention cooling).'
 

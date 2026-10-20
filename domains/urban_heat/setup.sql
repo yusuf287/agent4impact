@@ -87,7 +87,9 @@ CREATE OR REPLACE MODEL `a4i_climate.heat_offset_model`
 OPTIONS (
   model_type = 'LINEAR_REG',
   input_label_cols = ['heat_offset_f'],
-  enable_global_explain = TRUE
+  enable_global_explain = TRUE,
+  data_split_method = 'RANDOM',          -- hold out 20% of measured tracts so ML.EVALUATE is honest
+  data_split_eval_fraction = 0.2         -- (BigQuery skips the split by default for small tables)
 ) AS
 SELECT
   heat_offset_f,

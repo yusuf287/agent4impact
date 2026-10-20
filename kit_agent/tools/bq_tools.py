@@ -1,10 +1,10 @@
 """Pre-built, tested BigQuery tools. The generic BigQueryToolset handles ad-hoc SQL; these
-hold the fiddly queries (ML.PREDICT, ML.EXPLAIN_PREDICT, equity audit, VECTOR_SEARCH) the LLM should not improvise."""
+hold the fiddly queries (ML.PREDICT, ML.EXPLAIN_PREDICT, equity audit) the LLM should not improvise."""
 from google.cloud import bigquery
 
 from ..config import DATASET, DOMAIN, PROJECT_ID, models_of
 
-# Named Dallas areas -> bounding boxes (lat_min, lat_max, lon_min, lon_max) for "tool you built" spatial resolution
+# APPROXIMATE named Dallas areas (hand-drawn boxes, not official boundaries) -> bounding boxes (lat_min, lat_max, lon_min, lon_max) for "tool you built" spatial resolution
 DALLAS_BBOX = (32.55, 33.05, -97.05, -96.50)
 DALLAS_AREAS = {
     "south": (32.60, 32.76, -96.95, -96.65),
@@ -114,7 +114,7 @@ def explain_location_heat(area_or_direction: str = "", lat: float = 0.0, lon: fl
         where_clause = (f"ST_DISTANCE(ST_GEOGPOINT(tract_lon, tract_lat), ST_GEOGPOINT({float(lon)}, {float(lat)})) <= 4000")
         filter_desc = f"Within 4 km of ({lat:.4f}, {lon:.4f})"
     else:
-        for name, box in DALLAS_AREAS.items():
+        for name, box in sorted(DALLAS_AREAS.items(), key=lambda kv: -len(kv[0])):  # "south dallas" before "south"
             if name in q:
                 b_lat_min, b_lat_max, b_lon_min, b_lon_max = box
                 where_clause = (f"tract_lat BETWEEN {b_lat_min} AND {b_lat_max} "
@@ -205,7 +205,7 @@ def explain_location_heat(area_or_direction: str = "", lat: float = 0.0, lon: fl
         return {"status": "error", "message": str(e), "sql": sql}
 
 
-def audit_recommendations_equity(tract_ids_csv: str = "", top_n: int = 10) -> dict:
+def audit_recommendations_equity(tract_ids_csv: str = "", top_n: int = 10, ranking: str = "heat_only") -> dict:
     """Run the mandatory 3-step post-hoc Equity Audit comparing recommended Dallas census tracts against the Dallas citywide baseline.
 
     Use whenever the user asks "did we reach the neighborhoods that need this most?", requests an equity audit,
@@ -214,6 +214,9 @@ def audit_recommendations_equity(tract_ids_csv: str = "", top_n: int = 10) -> di
     Args:
         tract_ids_csv: optional comma-separated 11-digit Census tract geo_ids to audit. If empty, audits the top_n tracts from heat_offset_model.
         top_n: number of top model-recommended tracts to audit when tract_ids_csv is empty (default 10).
+        ranking: when tract_ids_csv is empty, which ranking to audit: "heat_only" (pure predicted offset; the honest
+            test of whether the MODEL finds vulnerable areas) or "blended" (offset + 10*no_vehicle_rate + 5*poverty_rate,
+            the ranking explain_location_heat uses). Auditing "blended" is partly circular because it already weights poverty.
 
     Returns:
         dict comparing recommended tracts vs. Dallas citywide average across poverty rate, no-vehicle household rate,
@@ -221,6 +224,8 @@ def audit_recommendations_equity(tract_ids_csv: str = "", top_n: int = 10) -> di
     """
     top_n = max(1, min(int(top_n), 50))
     ids = [x.strip().zfill(11) for x in (tract_ids_csv or "").split(",") if x.strip().isdigit()]
+    order_by = ("(predicted_heat_offset_f + (COALESCE(no_vehicle_rate, 0) * 10.0) + (COALESCE(poverty_rate, 0) * 5.0))"
+                if ranking == "blended" else "predicted_heat_offset_f")
 
     if ids:
         in_list = ", ".join(f"'{i}'" for i in ids)
@@ -238,7 +243,7 @@ def audit_recommendations_equity(tract_ids_csv: str = "", top_n: int = 10) -> di
           MODEL `{PROJECT_ID}.{DATASET}.heat_offset_model`,
           (SELECT * FROM `{PROJECT_ID}.{DATASET}.v_tract_heat_features` WHERE total_pop > 500)
         )
-        ORDER BY (predicted_heat_offset_f + (COALESCE(no_vehicle_rate, 0) * 10.0) + (COALESCE(poverty_rate, 0) * 5.0)) DESC
+        ORDER BY {order_by} DESC
         LIMIT {top_n}
         """
 
@@ -284,7 +289,7 @@ def audit_recommendations_equity(tract_ids_csv: str = "", top_n: int = 10) -> di
         if not rows:
             return {"status": "error", "message": "No tracts returned for equity audit."}
         res = dict(rows[0])
-        aligned = (res.get("poverty_delta_pct_pts", 0) > 0 and res.get("no_vehicle_delta_pct_pts", 0) > 0)
+        aligned = ((res.get("poverty_delta_pct_pts") or 0) > 0 and (res.get("no_vehicle_delta_pct_pts") or 0) > 0)
         res["equity_verdict"] = (
             "EQUITY_ALIGNED: Recommended sites prioritize neighborhoods with higher poverty and lower vehicle access than the Dallas average."
             if aligned else
@@ -294,38 +299,7 @@ def audit_recommendations_equity(tract_ids_csv: str = "", top_n: int = 10) -> di
             "Race and ethnicity columns were stripped from model training inputs because physical built environment drives heat islands; "
             "this post-hoc outcome audit verifies that recommendations actually reach vulnerable communities."
         )
+        res["ranking_audited"] = "explicit tract list" if ids else ranking
         return {"status": "success", "audit": res, "sql": sql}
     except Exception as e:
         return {"status": "error", "message": str(e), "sql": sql}
-
-
-def semantic_search(query: str, top_k: int = 5) -> dict:
-    """Find the records whose text is closest in MEANING to the query (vector search).
-
-    Use for fuzzy lookups: "places like...", "reports about...", matching free text to records.
-
-    Args:
-        query: natural-language description to search for.
-        top_k: number of matches (1-20).
-
-    Returns:
-        dict with matches (id, text, distance) or an error.
-    """
-    vs = DOMAIN.get("vector_search")
-    if not vs:
-        return {"status": "error", "message": "No vector_search configured. Run `kit embed`."}
-    top_k = max(1, min(int(top_k), 20))
-    sql = f"""
-    SELECT base.{vs['id_col']} AS id, base.{vs['text_col']} AS text, distance
-    FROM VECTOR_SEARCH(
-      TABLE `{PROJECT_ID}.{DATASET}.{vs['embeddings_table']}`, 'ml_generate_embedding_result',
-      (SELECT ml_generate_embedding_result FROM ML.GENERATE_EMBEDDING(
-         MODEL `{PROJECT_ID}.{DATASET}.{vs['model']}`, (SELECT @q AS content),
-         STRUCT(TRUE AS flatten_json_output))),
-      top_k => {top_k}, distance_type => 'COSINE')"""
-    try:
-        cfg = bigquery.QueryJobConfig(query_parameters=[bigquery.ScalarQueryParameter("q", "STRING", query)])
-        rows = _client().query(sql, job_config=cfg).result()
-        return {"status": "success", "matches": [dict(r) for r in rows]}
-    except Exception as e:
-        return {"status": "error", "message": str(e)}

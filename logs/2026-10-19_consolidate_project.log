@@ -19,3 +19,4 @@ Rollback for this pass: previous versions are in the Cowork outputs copy (a4i-ag
 2026-10-20 .env.example: event project + us-east1
 2026-10-20 Urban Heat cleanup: archived 26 files to .archive/pre-heat-cleanup-2026-10-20.zip, removed food_equity/lights_out/_template domains, old docs, unused scripts, embed/vision/EC/CKAN tools; urban_heat domain filled; README/AGENTS/docs/CHALLENGE.md rewritten
 2026-10-20 added domains/urban_heat/setup.sql; removed maps from investigator (end-to-end first)
+2026-10-20 review: setup_dallas_bq.py now runs setup.sql (single source); removed setup_views_and_model.sql (in git history); model hold-out split; audit ranking=heat_only|blended; area match longest-first; removed dead semantic_search

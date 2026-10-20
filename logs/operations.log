@@ -73,3 +73,25 @@
 2026-10-20T15:23:47Z [doctor] OK   team.yaml valid — team.yaml valid
 2026-10-20T15:23:47Z [doctor] OK   no stale frozen domain — True
 2026-10-20T15:23:47Z [doctor] 4 problem(s): ['adk CLI on PATH', 'gcloud on PATH', 'Application Default Credentials', 'BigQuery access']
+2026-10-20T15:39:17Z [doctor] === start 20261020T153917Z_doctor ===
+2026-10-20T15:39:17Z [doctor] OK   Python >= 3.10 — 3.11.9
+2026-10-20T15:39:17Z [doctor] OK   import google.adk — 2.12.0
+2026-10-20T15:39:18Z [doctor] OK   import google.cloud.bigquery — 3.46.2
+2026-10-20T15:39:18Z [doctor] OK   import yaml — 6.0.3
+2026-10-20T15:39:18Z [doctor] OK   import pandas — 3.0.6
+2026-10-20T15:39:18Z [doctor] OK   import pyarrow — 26.0.0
+2026-10-20T15:39:18Z [doctor] OK   import requests — 2.34.2
+2026-10-20T15:39:18Z [doctor] FAIL adk CLI on PATH: not found
+       fix: activate venv / pip install google-adk
+2026-10-20T15:39:18Z [doctor] FAIL gcloud on PATH: not found
+       fix: install Google Cloud SDK, then `gcloud auth login`
+2026-10-20T15:39:18Z [doctor] OK   GOOGLE_CLOUD_PROJECT set — qwiklabs-gcp-04-f8ba79cf4618
+2026-10-20T15:39:18Z [doctor] OK   BQ_DATASET set — a4i_climate
+2026-10-20T15:39:21Z [doctor] FAIL Application Default Credentials: Your default credentials were not found. To set up Application Default Credentials, see https://cloud.google.com/docs/authentication/external/set-up-adc for mor
+       fix: gcloud auth application-default login
+2026-10-20T15:39:25Z [doctor] FAIL BigQuery access: Your default credentials were not found. To set up Application Default Credentials, see https://cloud.google.com/docs/authentication/external/set-up-adc for mor
+       fix: check project, ADC, BigQuery API enabled
+2026-10-20T15:39:25Z [doctor] OK   domain.yaml complete — dallas_heat_planner: 6 tables, 2 models
+2026-10-20T15:39:25Z [doctor] OK   team.yaml valid — team.yaml valid
+2026-10-20T15:39:25Z [doctor] OK   no stale frozen domain — True
+2026-10-20T15:39:25Z [doctor] 4 problem(s): ['adk CLI on PATH', 'gcloud on PATH', 'Application Default Credentials', 'BigQuery access']
