@@ -109,10 +109,16 @@ tables:
       housing_units: Total housing units (FLOAT64).
       building_age_years: Approximate median building age in years, 2025 minus median_year_structure_built (FLOAT64).
       housing_density_proxy: Housing units divided by total population (FLOAT64).
+      land_area_sqkm: Tract land area in square kilometers (FLOAT64).
+      pop_density_sqkm: Resident population per square kilometer of land area (FLOAT64).
+      housing_density_sqkm: Housing units per square kilometer of land area (FLOAT64).
+      water_fraction: Share of tract area covered by water (FLOAT64).
+      seniors_65_plus: Count of residents aged 65 and older (FLOAT64).
+      senior_share: Share of residents aged 65 and older, 0.0 to 1.0 (FLOAT64).
       poverty_rate: Share of residents in poverty, 0.0 to 1.0 (FLOAT64).
       no_vehicle_rate: Share of households with no vehicle, 0.0 to 1.0 (FLOAT64).
       is_measured: TRUE if Heat Watch volunteers drove through this tract (observation_count > 0), FALSE if unmeasured (BOOL).
-      is_high_vulnerability: TRUE if poverty_rate >= 0.20 OR no_vehicle_rate >= 0.10 (BOOL).
+      is_high_vulnerability: TRUE if poverty_rate >= 0.20 OR no_vehicle_rate >= 0.10 OR senior_share >= 0.18 (BOOL).
   v_station_heat_frequency:
     description: >
       PREFERRED temporal analytical view — yearly extreme-heat threshold counts (days >= 95 F, >= 100 F, >= 105 F) and summer
@@ -139,6 +145,10 @@ models:
       - building_age_years
       - housing_density_proxy
       - housing_units
+      - pop_density_sqkm
+      - housing_density_sqkm
+      - water_fraction
+      - senior_share
       - total_pop
       - poverty_rate
       - no_vehicle_rate

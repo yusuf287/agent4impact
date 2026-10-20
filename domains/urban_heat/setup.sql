@@ -5,9 +5,10 @@
 -- Takes about 2-5 minutes. Safe to run again (everything is CREATE OR REPLACE).
 -- ============================================================================================
 
--- STEP A: one row per census tract with its heat offset + who lives there ---------------------
--- Each street reading is matched to the NEAREST tract centre (approximation; say so in the limits slide).
--- Saved as a TABLE (not a view) so the agent's queries are fast.
+-- STEP A: one row per census tract with its heat offset + enriched physical & senior metrics -------
+-- Uses tract_demographics_enriched (polygon containment ST_CONTAINS with 3 km centroid fallback)
+-- and preserves all original columns plus pop_density_sqkm, housing_density_sqkm, water_fraction,
+-- seniors_65_plus, and senior_share. Saved as a TABLE so agent queries run fast.
 CREATE OR REPLACE TABLE `a4i_climate.v_tract_heat_features` AS
 WITH
 city AS (
@@ -16,7 +17,7 @@ city AS (
   WHERE temp_f IS NOT NULL
 ),
 tracts AS (
-  SELECT * FROM `a4i_climate.tract_demographics`
+  SELECT * FROM `a4i_climate.tract_demographics_enriched`
   WHERE tract_lat IS NOT NULL AND tract_lon IS NOT NULL
 ),
 obs AS (
@@ -29,11 +30,16 @@ obs_tract AS (
     o.obs_id,
     ANY_VALUE(o.temp_f) AS temp_f,
     ANY_VALUE(o.humidity_pct) AS humidity_pct,
-    ARRAY_AGG(t.geo_id ORDER BY ST_DISTANCE(ST_GEOGPOINT(o.longitude, o.latitude),
-                                            ST_GEOGPOINT(t.tract_lon, t.tract_lat)) LIMIT 1)[OFFSET(0)] AS geo_id
+    ARRAY_AGG(
+      t.geo_id
+      ORDER BY
+        IF(t.tract_geom IS NOT NULL AND ST_CONTAINS(t.tract_geom, ST_GEOGPOINT(o.longitude, o.latitude)), 0, 1),
+        ST_DISTANCE(ST_GEOGPOINT(o.longitude, o.latitude), ST_GEOGPOINT(t.tract_lon, t.tract_lat))
+      LIMIT 1
+    )[OFFSET(0)] AS geo_id
   FROM obs o
   JOIN tracts t
-    ON ST_DWITHIN(ST_GEOGPOINT(o.longitude, o.latitude), ST_GEOGPOINT(t.tract_lon, t.tract_lat), 3000)  -- within 3 km
+    ON ST_DWITHIN(ST_GEOGPOINT(o.longitude, o.latitude), ST_GEOGPOINT(t.tract_lon, t.tract_lat), 3500)
   GROUP BY o.obs_id
 ),
 per_tract AS (
@@ -56,12 +62,18 @@ SELECT
   t.median_age,
   t.median_income,
   t.housing_units,
-  2025 - NULLIF(t.median_year_structure_built, 0)        AS building_age_years,
+  COALESCE(t.building_age_years, 2025 - NULLIF(t.median_year_structure_built, 0)) AS building_age_years,
   SAFE_DIVIDE(t.housing_units, t.total_pop)              AS housing_density_proxy,
+  t.land_area_sqkm,
+  t.pop_density_sqkm,
+  t.housing_density_sqkm,
+  t.water_fraction,
+  t.seniors_65_plus,
+  t.senior_share,
   t.poverty_rate,
   t.no_vehicle_rate,
   IFNULL(p.observation_count, 0) > 0                     AS is_measured,
-  (IFNULL(t.poverty_rate, 0) >= 0.20 OR IFNULL(t.no_vehicle_rate, 0) >= 0.10) AS is_high_vulnerability
+  (IFNULL(t.poverty_rate, 0) >= 0.20 OR IFNULL(t.no_vehicle_rate, 0) >= 0.10 OR IFNULL(t.senior_share, 0) >= 0.18) AS is_high_vulnerability
 FROM tracts t
 CROSS JOIN city c
 LEFT JOIN per_tract p USING (geo_id);
@@ -95,6 +107,7 @@ SELECT
   heat_offset_f,
   -- median_income removed: it is NULL for every measured tract in the loaded data (BigQuery ML cannot use it).
   tract_lat, tract_lon, building_age_years, housing_density_proxy, housing_units,
+  pop_density_sqkm, housing_density_sqkm, water_fraction, senior_share,
   total_pop, poverty_rate, no_vehicle_rate, median_age
 FROM `a4i_climate.v_tract_heat_features`
 WHERE is_measured AND heat_offset_f IS NOT NULL;
