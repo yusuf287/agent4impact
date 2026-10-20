@@ -18,7 +18,8 @@ team:
         census tracts with predicted_heat_offset_f and unpacked top_drivers from ML.EXPLAIN_PREDICT,
         including both measured and unmeasured tracts. Also check the 7-day Dallas forecast via
         get_forecast (latitude 32.7767, longitude -96.7970). Report exact geo_id, tract_lat, tract_lon,
-        predicted_heat_offset_f, top_drivers, total_pop, median_age, poverty_pct, and no_vehicle_pct.
+        predicted_heat_offset_f, top_drivers, total_pop, median_age, senior_pct, poverty_pct, no_vehicle_pct,
+        universal_vulnerability_index, risk_level, nearby_parks, greenery_status, cooling_center_type, and capacity_status.
     investigator:
       role: investigator
       tools: [bigquery]   # add maps later (Maps MCP needs extra setup); keep end-to-end path simple first
